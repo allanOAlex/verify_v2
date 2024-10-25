@@ -30,8 +30,23 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Folder Include="Extensions\" />
-    <Folder Include="Utilities\" />
+    <Compile Remove="Extensions\**" />
+    <Compile Remove="Utilities\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Remove="Extensions\**" />
+    <EmbeddedResource Remove="Utilities\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Remove="Extensions\**" />
+    <Content Remove="Utilities\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="Extensions\**" />
+    <None Remove="Utilities\**" />
   </ItemGroup>
 
 </Project>

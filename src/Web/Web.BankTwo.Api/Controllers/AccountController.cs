@@ -1,40 +1,41 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Web.BankTwo.Api.Features.Account.Dtos;
 
-using Web.BankOne.Api.Features.Account.Dtos;
-
-namespace Web.BankOne.Api.Controllers;
-
-
+namespace Web.BankTwo.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
 public class AccountController : ControllerBase
 {
+
     private static readonly List<AccountResponse> AccountData = new List<AccountResponse>
     {
         new AccountResponse
         {
-            AccountId = "123",
-            FirstName = "John",
-            LastName = "Doe",
-            OtherNames = "Sr.",
-            AccountNumber = "2456345645"
+            AccountId = "125",
+            FirstName = "Tressa",
+            LastName = "Of",
+            OtherNames = "Avila",
+            AccountNumber = "2456345647"
         },
         new AccountResponse
         {
-            AccountId = "124",
-            FirstName = "John",
-            LastName = "The",
-            OtherNames = "Baptist",
-            AccountNumber = "2456345646"
-        },
+            AccountId = "456",
+            FirstName = "Jane",
+            LastName = "Smith",
+            OtherNames = "Elizabeth",
+            AccountNumber = "333444555"
+        }
     };
 
     public AccountController()
     {
             
     }
+
+
+
 
     [HttpGet("ping")]
     public async Task<ActionResult<bool>> Ping()
@@ -69,5 +70,4 @@ public class AccountController : ControllerBase
             throw;
         }
     }
-
 }

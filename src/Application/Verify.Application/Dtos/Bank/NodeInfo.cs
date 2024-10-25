@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Verify.Application.Dtos.Account;
 
 namespace Verify.Application.Dtos.Bank;
+
 public record NodeInfo
 {
     public required string NodeBIC { get; init; }
@@ -14,8 +15,7 @@ public record NodeInfo
     public string? NodeEndPoint { get; init; }
     public required Uri NodeUri { get; init; }
     public List<NodeInfo>? KnownPeers { get; init; }
-    public List<AccountInfo>? StoredAccounts { get; init; }
+    public List<AccountInfo>? Accounts { get; init; }
     public double LastSeen { get; init; }
-    //public DateTimeOffset LastSeen { get; init; }
 
 }

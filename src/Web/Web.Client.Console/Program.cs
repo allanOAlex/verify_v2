@@ -44,14 +44,21 @@ var apiClient = serviceProvider.GetRequiredService<IApiClient>();
 
 AccountRequest accountRequest = new()
 {
+    InitiatorBIC = "BARCKENX",
+    RecipientBIC = "SCBLKENX",
+    RecipientAccountNumber = "2456345646"
+};
+
+AccountRequest accountRequest1 = new()
+{
     InitiatorBIC = "SCBLKENX",
     RecipientBIC = "BARCKENX",
-    RecipientAccountNumber = "2456345645"
+    RecipientAccountNumber = "2456345647"
 };
 
 Stopwatch stopwatch = Stopwatch.StartNew();
 var apiEndPoint = config["AppSettings:EndPoints:DHT:FetchAccountInfo"];
-var verifyResponse = await Methods.FetchAccountData(apiClient, accountRequest, apiEndPoint!);
+var verifyResponse = await Methods.FetchAccountData(apiClient, accountRequest1, apiEndPoint!);
 stopwatch.Stop();
 
 Console.WriteLine($"Account Holder: {verifyResponse.AccountName}");

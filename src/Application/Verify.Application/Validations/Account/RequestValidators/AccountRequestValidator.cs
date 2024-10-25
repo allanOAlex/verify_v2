@@ -13,7 +13,7 @@ public class AccountRequestValidator : AbstractValidator<AccountRequest>
 {
     public AccountRequestValidator()
     {
-        RuleFor(x => x.InitiatorBIC)
+        RuleFor(x => x.SenderBIC)
             .NotEmpty().WithMessage("Initiator BIC is required.")
             .Length(8, 11).WithMessage("BIC must be between 8 and 11 characters.");
 

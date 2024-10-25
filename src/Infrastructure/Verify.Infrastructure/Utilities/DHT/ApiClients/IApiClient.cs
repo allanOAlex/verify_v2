@@ -11,8 +11,13 @@ using Verify.Application.Dtos.Common;
 namespace Verify.Infrastructure.Utilities.DHT.ApiClients;
 internal interface IApiClient
 {
+    [Get("/api/account/ping")]
+    Task<AccountResponse> PingNodeAsync();
+
     [Post("/api/account/fetchaccountinfo")]
     Task<AccountResponse> FetchAccountData([Body] AccountRequest fetchAccountRequest);
+
+    
 
 
 

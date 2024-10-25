@@ -20,9 +20,9 @@ builder.Services.AddCors(options =>
 });
 
 //TODO - ConfigureHttpClientFactory
-builder.Services.AddHttpClient("DHT", client => 
+builder.Services.AddHttpClient("Node", client => 
 {
-    client.BaseAddress = new Uri("https://localhost:7260/");
+    //client.BaseAddress = new Uri("https://localhost:7260/");
     client.Timeout = TimeSpan.FromSeconds(500);
     
 });

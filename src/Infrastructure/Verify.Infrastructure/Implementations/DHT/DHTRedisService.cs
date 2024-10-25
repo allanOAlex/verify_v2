@@ -155,12 +155,12 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] bicHash)
+    public async Task<DHTResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash)
     {
         try
         {
             // Calculate the bucket key based on the bicHash
-            int distance = DHTUtilities.CalculateXorDistance(bicHash, bicHash); // This can stay if needed for bucket logic
+            int distance = DHTUtilities.CalculateXorDistance(currentNodeHash, bicHash); // This can stay if needed for bucket logic
             string redisBucketsKey = $"dht:buckets:{distance}"; //dht
 
             // Fetch nodes from the sorted set that match the bicHash
@@ -331,7 +331,7 @@ internal sealed class DHTRedisService : IDHTRedisService
         {
             // Get the node with the smallest score (most likely the least recently seen node)
             var leastRecentlySeenNodeHash = await GetLeastRecentlySeenNodeHash(bucketKey);
-            if (leastRecentlySeenNodeHash.Data!.Length > 0)
+            if (leastRecentlySeenNodeHash.Data != null && leastRecentlySeenNodeHash.Data!.Length > 0)
             {
                 // Step 2: Use the node hash (field) to retrieve the actual NodeInfo object
                 RedisValue serializedNodeInfo = await redisDatabase.HashGetAsync(nodeKey, leastRecentlySeenNodeHash.Data);
@@ -340,8 +340,6 @@ internal sealed class DHTRedisService : IDHTRedisService
                     var nodeInfo = JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!);
                     return DHTResponse<NodeInfo>.Success("Least recently seen node retrieved", nodeInfo!);
                 }
-
-                return DHTResponse<NodeInfo>.Failure("Node info not found in the hash.");
             }
 
             return DHTResponse<NodeInfo>.Failure("No nodes found in the bucket.");

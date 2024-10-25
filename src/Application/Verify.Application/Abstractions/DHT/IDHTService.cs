@@ -16,10 +16,10 @@ public interface IDHTService
     Task<DHTResponse<bool>> AddNodeToPeers(NodeInfo nodeInfo);
     Task<DHTResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo);
     Task<DHTResponse<AccountInfo>> LookupAccountInMemoryAsync(AccountRequest accountRequest);
-    Task<DHTResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] bicHash);
+    Task<DHTResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash);
     Task<DHTResponse<NodeInfo>> GetClosestNode(byte[] accountHash);
     Task<DHTResponse<bool>> NodeHasDataForKeyAsync(NodeInfo nodeInfo, byte[] accountHash);
     Task<DHTResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest);
-    Task<DHTResponse<AccountInfo>> QueryBankAsync(string nodeBaseUrl, AccountRequest accountRequest);
+    Task<DHTResponse<AccountInfo>> QueryBankAsync(string queryUrl, AccountRequest accountRequest);
 
 }

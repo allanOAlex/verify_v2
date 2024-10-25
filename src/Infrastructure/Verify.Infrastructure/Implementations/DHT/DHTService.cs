@@ -7,7 +7,7 @@ using System.Numerics;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
-
+using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
 
 using Refit;
@@ -28,6 +28,7 @@ internal sealed class DHTService : IDHTService
 {
     private readonly HttpClient httpClient;
     private readonly IApiClientFactory apiClientFactory;
+    private readonly IConfiguration configuration;
     private readonly IHashingService hashingService;
     private readonly INodeManagementService nodeManagementService;
     private readonly IDHTRedisService dHTRedisService;
@@ -35,7 +36,8 @@ internal sealed class DHTService : IDHTService
 
     public DHTService(
         IHttpClientFactory httpClientFactory, 
-        IApiClientFactory ApiClientFactory, 
+        IApiClientFactory ApiClientFactory,
+        IConfiguration Configuration,
         IHashingService HashingService,
         INodeManagementService NodeManagementService,
         IDHTRedisService DHTRedisService)
@@ -43,6 +45,7 @@ internal sealed class DHTService : IDHTService
         httpClient = httpClientFactory.CreateClient();
         httpClient.Timeout = TimeSpan.FromSeconds(100);
         apiClientFactory = ApiClientFactory;
+        configuration = Configuration;
         hashingService = HashingService;
         nodeManagementService = NodeManagementService;
         dHTRedisService = DHTRedisService;
@@ -58,27 +61,29 @@ internal sealed class DHTService : IDHTService
             if (accountResponse.Successful)
                 return accountResponse;
 
-            var bicHashResponse = await hashingService.ByteHash(accountRequest.InitiatorBIC);
-            var bicHash = bicHashResponse.Data ?? Array.Empty<byte>();
-            var nodeExistsInDHTResponse = await dHTRedisService.SortedSetNodeExistsByScoreAsync("dht:nodes", JsonConvert.SerializeObject(bicHash));
+            var senderBicHashResponse = await hashingService.ByteHash(accountRequest.SenderBIC);
+            var senderBicHash = senderBicHashResponse.Data ?? Array.Empty<byte>();
+
+            var nodeExistsInDHTResponse = await dHTRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
             if (!nodeExistsInDHTResponse.Data)
             {
-                var nodeEndpointResponse = await nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.InitiatorBIC);
+                var nodeEndpointResponse = await nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.SenderBIC);
                 if (!nodeEndpointResponse.Successful)
                 {
                     //ToDo: Decide how to handle this case; here we return a failure response
-                    return DHTResponse<AccountInfo>.Failure("Failed to retrieve node endpoint from config.");
+                    return DHTResponse<AccountInfo>.Failure(nodeEndpointResponse.Message!);
                 }
 
                 NodeInfo nodeToAdd = new()
                 {
-                    NodeBIC = accountRequest.InitiatorBIC,
-                    NodeHash = bicHash,
+                    NodeBIC = accountRequest.SenderBIC,
+                    NodeHash = senderBicHash,
                     NodeEndPoint = nodeEndpointResponse.Data,
                     NodeUri = new Uri(nodeEndpointResponse.Data!),
                     LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
                 };
 
+                // ToDo: BUG! BUG! BUG! - NodeInfo (Current Node) is the node we are trying to add; we eed to have a current node to compare the distance
                 var addNodeResponse = await nodeManagementService.AddOrUpdateNodeAsync(nodeToAdd, true);
                 if (!addNodeResponse.Successful)
                 {
@@ -89,15 +94,16 @@ internal sealed class DHTService : IDHTService
 
             // Route the request using Kademlia’s routing algorithm to find the responsible node
             var accountHash = await hashingService.ByteHash(accountRequest.RecipientAccountNumber);
-            var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(bicHash);
+            var currentNodeHash = await hashingService.ByteHash(configuration["NodeConfig:CurrentNode"]!);
+            var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, senderBicHash);
             if (!responsibleNodeResponse.Successful)
             {
                 return DHTResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
             }
 
             var responsibleNode = responsibleNodeResponse.Data;
-            var bankBaseUrl = $"{responsibleNode!.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
-            var accountDataResponse = await QueryBankAsync(bankBaseUrl, accountRequest);
+            var queryUrl = $"{responsibleNode!.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
+            var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
             if (!accountDataResponse.Successful)
             {
                 return DHTResponse<AccountInfo>.Failure("Failed to retrieve account details from the responsible node.");
@@ -134,11 +140,11 @@ internal sealed class DHTService : IDHTService
         }
     }
 
-    public async Task<DHTResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] bicHash)
+    public async Task<DHTResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash)
     {
         try
         {
-            return await dHTRedisService.GetSortedSetClosestNodeAsync(bicHash);
+            return await dHTRedisService.GetSortedSetClosestNodeAsync(currentNodeHash, bicHash);
         }
         catch (Exception)
         {
@@ -231,24 +237,24 @@ internal sealed class DHTService : IDHTService
         }
     }
 
-    public async Task<DHTResponse<AccountInfo>> QueryBankAsync(string bankBaseUrl, AccountRequest accountRequest)
+    public async Task<DHTResponse<AccountInfo>> QueryBankAsync(string queryUrl, AccountRequest accountRequest)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(bankBaseUrl))
+            if (string.IsNullOrWhiteSpace(queryUrl))
             {
                 return DHTResponse<AccountInfo>.Failure("Bank base URL is invalid.");
             }
 
             // Create a Refit client for the specified bank
-            var bankApiClient = apiClientFactory.CreateClient(bankBaseUrl);
+            var bankApiClient = apiClientFactory.CreateClient(queryUrl);
             var accountDetailsResponse = await bankApiClient.FetchAccountData(accountRequest);
 
             AccountInfo accountInfo = new()
             {
                 AccountHash = Array.Empty<byte>(),
                 AccountBIC = accountRequest.RecipientBIC,
-                AccountName = $"{accountDetailsResponse.FirstName} {accountDetailsResponse.LastName}",
+                AccountName = $"{accountDetailsResponse.FirstName} {accountDetailsResponse.LastName} {accountDetailsResponse.OtherNames}",
                 AccountNumber = accountDetailsResponse.AccountNumber
             };
 
