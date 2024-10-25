@@ -1,0 +1,6 @@
+@Web.BankOne.Api_HostAddress = http://localhost:5049
+
+GET {{Web.BankOne.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

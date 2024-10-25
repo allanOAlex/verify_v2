@@ -1,0 +1,29 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+	  <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Remove="Abstractions\Ihandlers\**" />
+    <EmbeddedResource Remove="Abstractions\Ihandlers\**" />
+    <None Remove="Abstractions\Ihandlers\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Mvc.Abstractions" Version="2.2.0" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.8" />
+    <PackageReference Include="Quartz" Version="3.13.0" />
+    <PackageReference Include="Refit" Version="7.2.1" />
+    <PackageReference Include="StackExchange.Redis" Version="2.8.16" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Domain\Verify.Domain\Verify.Domain.csproj" />
+    <ProjectReference Include="..\..\Shared\Verify.Shared\Verify.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
