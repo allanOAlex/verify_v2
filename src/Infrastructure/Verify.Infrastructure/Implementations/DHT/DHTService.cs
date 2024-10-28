@@ -64,33 +64,76 @@ internal sealed class DHTService : IDHTService
             var senderBicHashResponse = await hashingService.ByteHash(accountRequest.SenderBIC);
             var senderBicHash = senderBicHashResponse.Data ?? Array.Empty<byte>();
 
-            var nodeExistsInDHTResponse = await dHTRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
-            if (!nodeExistsInDHTResponse.Data)
+            var recipientBicHashResponse = await hashingService.ByteHash(accountRequest.RecipientBIC);
+            var recipientBicHash = senderBicHashResponse.Data ?? Array.Empty<byte>();
+
+            // Parallel checks for existence
+            var senderExistsTask = dHTRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
+            var recipientExistsTask = dHTRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
+
+            var senderExists = await senderExistsTask;
+            var recipientExists = await recipientExistsTask;
+
+            // Collect tasks for adding nodes if they don't exist
+            var addNodeTasks = new List<Task<DHTResponse<bool>>>();
+
+            if (!senderExists.Data)
             {
-                var nodeEndpointResponse = await nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.SenderBIC);
-                if (!nodeEndpointResponse.Successful)
-                {
-                    //ToDo: Decide how to handle this case; here we return a failure response
-                    return DHTResponse<AccountInfo>.Failure(nodeEndpointResponse.Message!);
-                }
+                var addInitiatorTask = AddNodeToDHTAsync(accountRequest.SenderBIC, senderBicHash);
+                addNodeTasks.Add(addInitiatorTask);
+            }
 
-                NodeInfo nodeToAdd = new()
-                {
-                    NodeBIC = accountRequest.SenderBIC,
-                    NodeHash = senderBicHash,
-                    NodeEndPoint = nodeEndpointResponse.Data,
-                    NodeUri = new Uri(nodeEndpointResponse.Data!),
-                    LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
-                };
+            if (!recipientExists.Data)
+            {
+                var addRecipientTask = AddNodeToDHTAsync(accountRequest.RecipientBIC, recipientBicHash);
+                addNodeTasks.Add(addRecipientTask);
+            }
 
-                // ToDo: BUG! BUG! BUG! - NodeInfo (Current Node) is the node we are trying to add; we eed to have a current node to compare the distance
-                var addNodeResponse = await nodeManagementService.AddOrUpdateNodeAsync(nodeToAdd, true);
-                if (!addNodeResponse.Successful)
+            // Run all add tasks in parallel if there are nodes to add
+            if (addNodeTasks.Count > 0)
+            {
+                var addNodeResponses = await Task.WhenAll(addNodeTasks);
+
+                // Handle failure in any add task
+                foreach (var response in addNodeResponses)
                 {
-                    //ToDo: Decide how to handle this case; here we return a failure response
-                    return DHTResponse<AccountInfo>.Failure("Failed to add or update the node in the DHT.");
+                    if (!response.Successful)
+                    {
+                        return DHTResponse<AccountInfo>.Failure("Failed to add one or more nodes to the DHT.");
+                    }
                 }
             }
+
+            //return DHTResponse<AccountInfo>.Success("Nodes verified and added if necessary", null);
+
+
+            //var nodeExistsInDHTResponse = await dHTRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
+            //if (!nodeExistsInDHTResponse.Data)
+            //{
+            //    var nodeEndpointResponse = await nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.SenderBIC);
+            //    if (!nodeEndpointResponse.Successful)
+            //    {
+            //        //ToDo: Decide how to handle this case; here we return a failure response
+            //        return DHTResponse<AccountInfo>.Failure(nodeEndpointResponse.Message!);
+            //    }
+
+            //    NodeInfo nodeToAdd = new()
+            //    {
+            //        NodeBIC = accountRequest.SenderBIC,
+            //        NodeHash = senderBicHash,
+            //        NodeEndPoint = nodeEndpointResponse.Data,
+            //        NodeUri = new Uri(nodeEndpointResponse.Data!),
+            //        LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+            //    };
+
+            //    // ToDo: BUG! BUG! BUG! - NodeInfo (Current Node) is the node we are trying to add; we eed to have a current node to compare the distance
+            //    var addNodeResponse = await nodeManagementService.AddOrUpdateNodeAsync(nodeToAdd, true);
+            //    if (!addNodeResponse.Successful)
+            //    {
+            //        //ToDo: Decide how to handle this case; here we return a failure response
+            //        return DHTResponse<AccountInfo>.Failure("Failed to add or update the node in the DHT.");
+            //    }
+            //}
 
             // Route the request using Kademlia’s routing algorithm to find the responsible node
             var accountHash = await hashingService.ByteHash(accountRequest.RecipientAccountNumber);
@@ -301,6 +344,26 @@ internal sealed class DHTService : IDHTService
 
             throw;
         }
+    }
+
+    private async Task<DHTResponse<bool>> AddNodeToDHTAsync(string bic, byte[] bicHash)
+    {
+        var nodeEndpointResponse = await nodeManagementService.GetNodeEndpointFromConfigAsync(bic);
+        if (!nodeEndpointResponse.Successful)
+        {
+            return DHTResponse<bool>.Failure(nodeEndpointResponse.Message!);
+        }
+    
+        NodeInfo nodeToAdd = new()
+        {
+            NodeBIC = bic,
+            NodeHash = bicHash,
+            NodeEndPoint = nodeEndpointResponse.Data,
+            NodeUri = new Uri(nodeEndpointResponse.Data!),
+            LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
+        };
+    
+        return await nodeManagementService.AddOrUpdateNodeAsync(nodeToAdd, true);
     }
 
     public async Task<DHTResponse<bool>> AddNodeToPeers(NodeInfo nodeInfo)

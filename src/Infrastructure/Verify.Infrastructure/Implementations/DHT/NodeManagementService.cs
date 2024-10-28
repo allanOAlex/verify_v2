@@ -230,6 +230,8 @@ internal sealed class NodeManagementService : INodeManagementService
     {
         try
         {
+            var isCentralNode = nodeInfo.NodeBIC == configuration["NodeConfig:CurrentNode"];
+
             // ToDo: BUG! BUG! BUG! - NodeInfo (Current Node) is the node we are trying to add; we eed to have a current node to compare the distance
             var currentNodeHash = await hashingService.ByteHash(configuration["NodeConfig:CurrentNode"]!);
             int distance = DHTUtilities.CalculateXorDistance(currentNodeHash.Data!, nodeInfo.NodeHash);
@@ -241,7 +243,7 @@ internal sealed class NodeManagementService : INodeManagementService
             if (existingNodeResponse?.Data != null)
             {
                 var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
-                await dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, JsonConvert.SerializeObject(updatedNode), TimeSpan.FromHours(24));
+                await dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, JsonConvert.SerializeObject(updatedNode), TimeSpan.FromHours(24), isCentralNode);
                 await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, updatedNode, distance);
 
                 // ToDo: Not sure if this is really n
@@ -252,7 +254,7 @@ internal sealed class NodeManagementService : INodeManagementService
             }
             else
             {
-                return await HandleNodeAdditionWithEvictionAsync(redisBucketsKey, redisNodesKey, nodeInfo, distance, withEviction);
+                return await HandleNodeAdditionWithEvictionAsync(redisBucketsKey, redisNodesKey, nodeInfo, distance, isCentralNode, withEviction);
             }
         }
         catch (Exception)
@@ -390,19 +392,19 @@ internal sealed class NodeManagementService : INodeManagementService
 
     }
 
-    private async Task<DHTResponse<bool>> HandleNodeAdditionWithEvictionAsync(string redisBucketsKey, string redisNodesKey, NodeInfo nodeInfo, int distance, bool withEviction)
+    private async Task<DHTResponse<bool>> HandleNodeAdditionWithEvictionAsync(string redisBucketsKey, string redisNodesKey, NodeInfo nodeInfo, int distance, bool isCentralNode, bool withEviction)
     {
         // Check bucket size for the XOR distance bucket
         var bucketCount = await dhtRedisService.GetBucketCountAsync(redisBucketsKey);
         if (bucketCount.Data < BucketSize)
         {
-            await dhtRedisService.SetNodeAsync(redisNodesKey, nodeInfo.NodeHash, JsonConvert.SerializeObject(nodeInfo), TimeSpan.FromHours(24));
+            await dhtRedisService.SetNodeAsync(redisNodesKey, nodeInfo.NodeHash, JsonConvert.SerializeObject(nodeInfo), TimeSpan.FromHours(24), isCentralNode);
             return await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, nodeInfo, distance);
 
         }
         else if (withEviction)
         {
-            return await EvictAndReplaceNode(redisBucketsKey, redisNodesKey, nodeInfo, distance);
+            return await EvictAndReplaceNode(redisBucketsKey, redisNodesKey, nodeInfo, distance, isCentralNode);
         }
         else
         {
@@ -410,7 +412,7 @@ internal sealed class NodeManagementService : INodeManagementService
         }
     }
 
-    private async Task<DHTResponse<bool>> EvictAndReplaceNode(string redisBucketsKey, string redisNodesKey, NodeInfo newNode, int distance)
+    private async Task<DHTResponse<bool>> EvictAndReplaceNode(string redisBucketsKey, string redisNodesKey, NodeInfo newNode, int distance, bool isCentralNode)
     {
         // ToDo: What if there is no nodes in the bucket?
         var leastRecentlySeenNode = await dhtRedisService.GetLeastRecentlySeenNodeAsync(redisBucketsKey, redisBucketsKey);
@@ -421,12 +423,12 @@ internal sealed class NodeManagementService : INodeManagementService
             {
                 await dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
                 await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
-                await dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24));
+                await dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24), isCentralNode);
                 return DHTResponse<bool>.Success("Replaced least recently seen node", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
 
             // If reachable, check if we should replace the least recently seen node based on LRS/LRU
-            if (ShouldReplaceNode(leastRecentlySeenNode.Data!, newNode))
+            if (ShouldReplaceNode(leastRecentlySeenNode.Data!, newNode, isCentralNode))
             {
                 await dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
                 await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
@@ -439,15 +441,19 @@ internal sealed class NodeManagementService : INodeManagementService
         }
 
         await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
-        await dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24));
+        await dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24), isCentralNode);
         return DHTResponse<bool>.Success("No node to replace: - added new node successfully", true, null, new Dictionary<string, object>() { { "node", newNode } });
 
     }
 
-    private bool ShouldReplaceNode(NodeInfo leastRecentlySeenNode, NodeInfo newNode)
+    private bool ShouldReplaceNode(NodeInfo leastRecentlySeenNode, NodeInfo newNode, bool isCentralNode)
     {
         // Customize your eviction policy here, e.g., based on age, frequency, or node metrics
         // For example, we'll replace if the new node has been seen more recently than the least recently seen node
+        if (isCentralNode)
+        {
+            return false;
+        }
         return leastRecentlySeenNode.LastSeen < newNode.LastSeen;
     }
 

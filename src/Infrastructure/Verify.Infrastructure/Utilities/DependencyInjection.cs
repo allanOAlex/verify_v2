@@ -35,6 +35,7 @@ using Verify.Infrastructure.Utilities.DHT.ApiClients;
 using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Application.Abstractions.DHT.Jobs;
 using Quartz.Simpl;
+using Verify.Infrastructure.Configurations.DHT;
 
 namespace Verify.Infrastructure.Utilities;
 public static class DependencyInjection
@@ -209,6 +210,7 @@ public static class DependencyInjection
             services.AddScoped<IHashingService, HashingService>();
             services.AddScoped<INodeManagementService, NodeManagementService>();
             services.AddScoped<IDHTMaintenanceJob, DHTMaintenanceJob>();
+            services.AddHostedService<CentralNodeInitializer>();
 
             services.AddScoped<IUnitOfWork, UnitOfWork>();
             services.AddTransient(typeof(IBaseRepository<>), typeof(BaseRepository<>));

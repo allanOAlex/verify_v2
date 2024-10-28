@@ -19,11 +19,11 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Verify.Shared", "src\Shared
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Verify.Api.Gateway", "src\ApiGateway\Verify.Api.Gateway\Verify.Api.Gateway.csproj", "{4C6CD7AF-57B6-4DC9-AB13-0B35FD812FCA}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Web.BankOne.Api", "src\Web\Web.BankOne.Api\Web.BankOne.Api.csproj", "{144603C3-BD59-46AB-81F7-17A14E673807}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.BankOne.Api", "src\Web\Web.BankOne.Api\Web.BankOne.Api.csproj", "{144603C3-BD59-46AB-81F7-17A14E673807}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Web.BankTwo.Api", "src\Web\Web.BankTwo.Api\Web.BankTwo.Api.csproj", "{A3D7CBB0-A75A-47E3-862E-DDE7F9489F6B}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.BankTwo.Api", "src\Web\Web.BankTwo.Api\Web.BankTwo.Api.csproj", "{A3D7CBB0-A75A-47E3-862E-DDE7F9489F6B}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Web.Client.Console", "src\Web\Web.Client.Console\Web.Client.Console.csproj", "{A68B59E9-333B-4765-B133-9EAF028A57A2}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.Client.Console", "src\Web\Web.Client.Console\Web.Client.Console.csproj", "{A68B59E9-333B-4765-B133-9EAF028A57A2}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution

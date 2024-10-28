@@ -161,7 +161,7 @@ internal sealed class DHTRedisService : IDHTRedisService
         {
             // Calculate the bucket key based on the bicHash
             int distance = DHTUtilities.CalculateXorDistance(currentNodeHash, bicHash); // This can stay if needed for bucket logic
-            string redisBucketsKey = $"dht:buckets:{distance}"; //dht
+            string redisBucketsKey = $"dht:buckets:{distance}";
 
             // Fetch nodes from the sorted set that match the bicHash
             var matchingNodes = await redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue, Exclude.None, Order.Ascending);
@@ -350,12 +350,12 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null)
+    public async Task<DHTResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
     {
         try
         {
             await redisDatabase.HashSetAsync(key, field, serializedValue);
-            if (expiry.HasValue)
+            if (expiry.HasValue && !isCentralNode)
             {
                 await redisDatabase.KeyExpireAsync(key, expiry);
             }
@@ -589,6 +589,8 @@ internal sealed class DHTRedisService : IDHTRedisService
     }
 
     
+
+
 
     #endregion
 
