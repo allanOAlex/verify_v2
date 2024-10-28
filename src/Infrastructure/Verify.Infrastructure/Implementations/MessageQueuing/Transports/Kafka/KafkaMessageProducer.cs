@@ -1,52 +1,32 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection.Metadata;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using System.Text;
 using Confluent.Kafka;
 
 using Newtonsoft.Json;
 using Verify.Application.Abstractions.MessageQueuing;
-using static Confluent.Kafka.ConfigPropertyNames;
 
 namespace Verify.Infrastructure.Implementations.MessageQueuing.Transports.Kafka;
 internal sealed class KafkaMessageProducer : IMessageProducer
 {
-    private readonly IProducer<string, byte[]> producer;
-    public KafkaMessageProducer(ProducerConfig ProducerConfig)
+    private readonly IProducer<string, byte[]> _producer;
+    public KafkaMessageProducer(ProducerConfig producerConfig)
     {
         // Ensure producerConfig is valid
-        var producerBuilder = new ProducerBuilder<string, byte[]>(ProducerConfig);
-        producer = producerBuilder.Build(); // Correctly build the Kafka producer
+        var producerBuilder = new ProducerBuilder<string, byte[]>(producerConfig);
+        _producer = producerBuilder.Build(); // Correctly build the Kafka producer
     }
 
     public async Task ProduceAsync<T>(T message) where T : class
     {
-        try
-        {
-            var topic = typeof(T).Name;
-            var serializedMessage = Serialize(message);
+        var topic = typeof(T).Name;
+        var serializedMessage = Serialize(message);
 
-            var deliveryReport = await producer.ProduceAsync(topic, new Message<string, byte[]>
-            {
-                Key = Guid.NewGuid().ToString(),
-                Value = serializedMessage
-            });
-
-            Console.WriteLine($"Message delivered to {deliveryReport.TopicPartitionOffset}");
-        }
-        catch (ProduceException<string, byte[]>)
+        var deliveryReport = await _producer.ProduceAsync(topic, new Message<string, byte[]>
         {
-            // Handle Kafka-specific exceptions
+            Key = Guid.NewGuid().ToString(),
+            Value = serializedMessage
+        });
 
-            throw;
-        }
-        catch (Exception)
-        {
-            throw;
-        }
+        Console.WriteLine($"Message delivered to {deliveryReport.TopicPartitionOffset}");
     }
 
     private byte[] Serialize<T>(T message)

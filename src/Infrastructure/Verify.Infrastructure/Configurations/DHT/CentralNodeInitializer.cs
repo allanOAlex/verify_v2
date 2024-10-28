@@ -1,50 +1,50 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using Microsoft.Extensions.Configuration;
+﻿using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 
 using Newtonsoft.Json;
 
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Bank;
-using Verify.Infrastructure.Implementations.DHT;
 
 namespace Verify.Infrastructure.Configurations.DHT;
-internal sealed class CentralNodeInitializer : IHostedService
-{
-    private readonly IDHTRedisService dhtRedisService;
-    private readonly IHashingService hashingService;
-    private readonly IConfiguration configuration;
 
-    public CentralNodeInitializer(IDHTRedisService DhtRedisService, IHashingService HashingService, IConfiguration Configuration)
+
+public sealed class CentralNodeInitializer : IHostedService
+{
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly IConfiguration _configuration;
+
+    public CentralNodeInitializer(IServiceScopeFactory scopeFactory, IConfiguration configuration)
     {
-        dhtRedisService = DhtRedisService;
-        hashingService = HashingService;
-        configuration = Configuration;
+        _scopeFactory = scopeFactory;
+        _configuration = configuration;
     }
 
     public async Task StartAsync(CancellationToken cancellationToken)
     {
+        //using (var scope = _scopeFactory.CreateScope())
+
+        var scope = _scopeFactory.CreateScope();
+        var _dhtRedisService = scope.ServiceProvider.GetRequiredService<IDhtRedisService>();
+        var _hashingService = scope.ServiceProvider.GetRequiredService<IHashingService>();
+
         // Fetch the central node's BIC from configuration
-        var centralNodeBIC = configuration["NodeConfig:CurrentNode"];
-        if (string.IsNullOrEmpty(centralNodeBIC))
+        var centralNodeBic = _configuration["NodeConfig:CurrentNode"];
+        if (string.IsNullOrEmpty(centralNodeBic))
         {
             throw new InvalidOperationException("Central node BIC not configured.");
         }
 
         // Hash the BIC and check if the central node exists
-        var centralNodeHash = await hashingService.ByteHash(centralNodeBIC);
-        var nodeExistsResponse = await dhtRedisService.NodeExistsAsync("dht:nodes", centralNodeHash.Data!);
+        var centralNodeHash = await _hashingService.ByteHash(centralNodeBic);
+        var nodeExistsResponse = await _dhtRedisService.NodeExistsAsync("dht:nodes", centralNodeHash.Data!);
         if (!nodeExistsResponse.Data)
         {
-            var nodeEndpoint = configuration["NodeConfig:DHTNODE"];
+            var nodeEndpoint = _configuration["NodeConfig:DHTNODE"];
             NodeInfo centralNode = new()
             {
-                NodeBIC = centralNodeBIC,
+                NodeBic = centralNodeBic,
                 NodeHash = centralNodeHash.Data!,
                 NodeEndPoint = nodeEndpoint,
                 NodeUri = new Uri(nodeEndpoint!),
@@ -52,8 +52,8 @@ internal sealed class CentralNodeInitializer : IHostedService
             };
 
             // Add the central node to Redis without expiry
-            await dhtRedisService.SetSortedNodeAsync($"dht:buckets:{0}", centralNode, 0);
-            await dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, JsonConvert.SerializeObject(centralNode), null, isCentralNode: true);
+            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{0}", centralNode, 0);
+            await _dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, JsonConvert.SerializeObject(centralNode), null, isCentralNode: true);
         }
     }
 

@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Verify.Infrastructure.Configurations.Common;
+﻿namespace Verify.Infrastructure.Configurations.Common;
 internal sealed record PaginationSetting
 {
     public int DefaultPageSize { get; init; } = 50;

@@ -1,20 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using System.Linq.Expressions;
 using Verify.Application.Abstractions.IRepositories;
 
 namespace Verify.Infrastructure.Implementations.Repositories;
 public class BaseRepository<T> : IBaseRepository<T> where T : class
 {
-    public BaseRepository()
-    {
-
-    }
-
     public Task<T> CreateAsync(T entity)
     {
         throw new NotImplementedException();
@@ -35,7 +24,7 @@ public class BaseRepository<T> : IBaseRepository<T> where T : class
         throw new NotImplementedException();
     }
 
-    public Task<T?> FindByIdAsync(int Id)
+    public Task<T?> FindByIdAsync(int id)
     {
         throw new NotImplementedException();
     }

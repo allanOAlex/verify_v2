@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Verify.Infrastructure.Configurations.Caching;
+﻿namespace Verify.Infrastructure.Configurations.Caching;
 public class CacheSetting
 {
     public string CacheKeyPrefix { get; set; } = "KHS_";

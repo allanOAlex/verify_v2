@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Verify.Shared.Exceptions;
+﻿namespace Verify.Shared.Exceptions;
 public class NoContentException : CustomException
 {
     public NoContentException()

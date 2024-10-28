@@ -1,21 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Linq.Expressions;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using System.Linq.Expressions;
 using Verify.Application.Abstractions.IRepositories;
 using Verify.Domain.Entities;
 
 namespace Verify.Infrastructure.Implementations.Repositories;
 internal sealed class LogRepository : IBaseRepository<Log>, ILogRepository
 {
-    public LogRepository()
-    {
-        
-    }
-
     public Task<Log> CreateAsync(Log entity)
     {
         throw new NotImplementedException();
@@ -36,7 +25,7 @@ internal sealed class LogRepository : IBaseRepository<Log>, ILogRepository
         throw new NotImplementedException();
     }
 
-    public Task<Log?> FindByIdAsync(int Id)
+    public Task<Log?> FindByIdAsync(int id)
     {
         throw new NotImplementedException();
     }

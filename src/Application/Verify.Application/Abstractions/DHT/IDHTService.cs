@@ -1,25 +1,17 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.Xml.Linq;
-
-using Verify.Application.Dtos.Account;
+﻿using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
 
 namespace Verify.Application.Abstractions.DHT;
-public interface IDHTService
+public interface IDhtService
 {
     
-    Task<DHTResponse<bool>> AddNodeToPeers(NodeInfo nodeInfo);
-    Task<DHTResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo);
-    Task<DHTResponse<AccountInfo>> LookupAccountInMemoryAsync(AccountRequest accountRequest);
-    Task<DHTResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash);
-    Task<DHTResponse<NodeInfo>> GetClosestNode(byte[] accountHash);
-    Task<DHTResponse<bool>> NodeHasDataForKeyAsync(NodeInfo nodeInfo, byte[] accountHash);
-    Task<DHTResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest);
-    Task<DHTResponse<AccountInfo>> QueryBankAsync(string queryUrl, AccountRequest accountRequest);
+    //Task<DhtResponse<bool>> AddNodeToPeers(NodeInfo nodeInfo);
+    Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo> nodes, byte[] centralNodeHash, byte[] senderBicHash, byte[] recipinetBicHash);
+    Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo);
+    Task<DhtResponse<AccountInfo>> LookupAccountInMemoryAsync(AccountRequest accountRequest);
+    Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash);
+    Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest);
+    Task<DhtResponse<AccountInfo>> QueryBankAsync(string queryUrl, AccountRequest accountRequest);
 
 }

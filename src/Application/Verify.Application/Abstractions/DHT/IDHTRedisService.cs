@@ -1,43 +1,39 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using StackExchange.Redis;
-
+﻿using StackExchange.Redis;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
-using Verify.Domain.Enums;
 
 namespace Verify.Application.Abstractions.DHT;
-public interface IDHTRedisService
+public interface IDhtRedisService
 {
-    Task<DHTResponse<bool>> NodeExistsAsync(string key, byte[] hash);
-    Task<DHTResponse<bool>> SortedSetNodeExistsByScoreAsync(string key, string serializedValue);
-    Task<DHTResponse<bool>> SortedSetNodeExistsByRankAsync(string key, byte[] hash);
-    Task<DHTResponse<List<NodeInfo>>> GetAllNodesAsync(string key);
-    Task<DHTResponse<List<NodeInfo>>> GetNodesByScoreRangeAsync(string key, long minRank, long maxRank); // Retrieve nodes based on score (e.g. XOR Distance)
-    Task<DHTResponse<List<NodeInfo>>> GetNodesByRankRangeAsync(string key, long minRank, long maxRank); // Retrieve nodes based on rank (index-based position in the set)
-    Task<DHTResponse<List<NodeInfo>>> GetActiveNodesInBucketAsync(int distance);
-    Task<DHTResponse<long>> GetBucketCountAsync(string key, StorageType storageType);
-    Task<DHTResponse<long>> GetBucketCountAsync(string bucketKey);
-    Task<DHTResponse<long>> GetBucketLengthAsync(string bucketKey);
-    Task<DHTResponse<NodeInfo>> GetLeastRecentlySeenNodeAsync(string bucketKey, string nodeKey);
-    Task<DHTResponse<AccountInfo>> GetAccountNodeAsync(string key, byte[] field);
-    Task<DHTResponse<NodeInfo>> GetNodeAsync(string key, byte[] field);
-    Task<DHTResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash);
-    Task<DHTResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false);
+    Task<ITransaction> CreateTransaction();
+    Task<DhtResponse<bool>> NodeExistsAsync(string key, byte[] hash);
+    Task<DhtResponse<bool>> SortedSetNodeExistsByScoreAsync(string key, string serializedValue);
+    Task<DhtResponse<bool>> SortedSetNodeExistsByRankAsync(string key, byte[] hash);
+    Task<DhtResponse<List<NodeInfo>>> GetAllNodesAsync(string key);
+    Task<DhtResponse<List<NodeInfo>>> GetNodesByScoreRangeAsync(string key, long minRank, long maxRank); // Retrieve nodes based on score (e.g. XOR Distance)
+    Task<DhtResponse<List<NodeInfo>>> GetNodesByRankRangeAsync(string key, long minRank, long maxRank); // Retrieve nodes based on rank (index-based position in the set)
+    Task<DhtResponse<List<NodeInfo>>> GetActiveNodesInBucketAsync(int distance);
+    Task<DhtResponse<long>> GetBucketCountAsync(string bucketKey);
+    Task<DhtResponse<long>> GetBucketLengthAsync(string bucketKey);
+    Task<DhtResponse<NodeInfo>> GetLeastRecentlySeenNodeAsync(string bucketKey, string nodeKey);
+    Task<DhtResponse<AccountInfo>> GetAccountNodeAsync(string key, byte[] field);
+    Task<DhtResponse<NodeInfo>> GetNodeAsync(string key, byte[] field);
+    Task<DhtResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash);
+    Task<DhtResponse<NodeInfo>> GetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash);
+    Task<DhtResponse<NodeInfo>> FindClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash, int maxDepth = 3);
+    Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash, int maxDepth = 3);
+    Task<List<NodeInfo>> GetKClosestNodesAsync(byte[] nodeHash, int k = 20);
+    Task<List<NodeInfo>> GetKClosestNodesWithAlphaAsync(byte[] nodeHash, int k = 20, int alpha = 3);
+    Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false);
 
     // Sorted set to store nodes by distance or other criteria
-    Task<DHTResponse<bool>> SetSortedNodeAsync(string bucketKey, NodeInfo value, double score);
-    Task<DHTResponse<bool>> SetSortedNodeInListAsync(string bucketKey, NodeInfo value);
-    Task<DHTResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, AccountInfo value, double score);
-    Task<DHTResponse<bool>> RemoveNodeAsync(string key, byte[] field);
-    Task<DHTResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo);
-    Task UpdateNodeTimestampAsync(string bucketKey, byte[] nodeHash);
-    Task<DHTResponse<bool>> UpdateUsingTransaction(byte[] bicHash, NodeInfo nodeInfo, TimeSpan? expiry = null);
+    Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, NodeInfo value, double score);
+    Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, NodeInfo value);
+    Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, AccountInfo value, double score);
+    Task<DhtResponse<bool>> RemoveNodeAsync(string key, byte[] field);
+    Task<DhtResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo);
+    Task<DhtResponse<bool>> UpdateUsingTransaction(byte[] bicHash, NodeInfo nodeInfo, TimeSpan? expiry = null);
 
     Task CleanUpInactiveNodesAsync(string redisNodesKey);
 

@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Text.Json;
-using System.Threading.Tasks;
+﻿using System.Text.Json;
 using Microsoft.Extensions.Caching.Distributed;
 
 using Verify.Application.Abstractions.IServices;
@@ -11,59 +6,34 @@ using Verify.Application.Abstractions.IServices;
 namespace Verify.Infrastructure.Implementations.Caching;
 internal sealed class RedisCacheService : ICacheService
 {
-    private readonly IDistributedCache cache;
+    private readonly IDistributedCache _cache;
 
-    public RedisCacheService(IDistributedCache Cache)
+    public RedisCacheService(IDistributedCache cache)
     {
-        cache = Cache;
+        _cache = cache;
     }
 
 
     public async Task<T?> GetAsync<T>(string key)
     {
-        try
-        {
-            var value = await cache.GetStringAsync(key);
-            return value == null ? default : JsonSerializer.Deserialize<T>(value);
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
-
+        var value = await _cache.GetStringAsync(key);
+        return value == null ? default : JsonSerializer.Deserialize<T>(value);
     }
 
     public async Task RemoveAsync(string key)
     {
-        try
-        {
-            await cache.RemoveAsync(key);
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
+        await _cache.RemoveAsync(key);
     }
 
     public async Task SetAsync<T>(string key, T value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
     {
-        try
+        var options = new DistributedCacheEntryOptions
         {
-            var options = new DistributedCacheEntryOptions
-            {
-                AbsoluteExpirationRelativeToNow = absoluteExpiration,
-                SlidingExpiration = slidingExpiration
-            };
+            AbsoluteExpirationRelativeToNow = absoluteExpiration,
+            SlidingExpiration = slidingExpiration
+        };
 
-            var serializedValue = JsonSerializer.Serialize(value);
-            await cache.SetStringAsync(key, serializedValue, options);
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
+        var serializedValue = JsonSerializer.Serialize(value);
+        await _cache.SetStringAsync(key, serializedValue, options);
     }
 }

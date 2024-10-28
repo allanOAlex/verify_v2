@@ -1,9 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
+﻿using System.Text;
 using Confluent.Kafka;
 
 using Newtonsoft.Json;
@@ -12,24 +7,24 @@ using Verify.Application.Abstractions.MessageQueuing;
 namespace Verify.Infrastructure.Implementations.MessageQueuing.Transports.Kafka;
 internal sealed class KafkaMessageConsumer : IMessageConsumer
 {
-    private readonly IConsumer<string, byte[]> consumer;
+    private readonly IConsumer<string, byte[]> _consumer;
     public KafkaMessageConsumer(ConsumerConfig consumerConfig)
     {
         // Create the Kafka consumer using ConsumerBuilder
         var consumerBuilder = new ConsumerBuilder<string, byte[]>(consumerConfig);
-        consumer = consumerBuilder.Build();
+        _consumer = consumerBuilder.Build();
     }
     //ToDO:
     public async Task ConsumeAsync<T>(Func<T, Task> handler) where T : class
     {
         var topic = typeof(T).Name;
-        consumer.Subscribe(topic);
+        _consumer.Subscribe(topic);
 
         try
         {
             while (true)
             {
-                var consumeResult = consumer.Consume(TimeSpan.FromSeconds(1));
+                var consumeResult = _consumer.Consume(TimeSpan.FromSeconds(1));
                 if (consumeResult != null)
                 {
                     var deserializedMessage = Deserialize<T>(consumeResult.Message.Value);
@@ -45,19 +40,9 @@ internal sealed class KafkaMessageConsumer : IMessageConsumer
                 }
             }
         }
-        catch (ConsumeException)
-        {
-            // Handle Kafka-specific exceptions
-
-            throw;
-        }
-        catch (Exception)
-        {
-            throw;
-        }
         finally
         {
-            consumer.Close();
+            _consumer.Close();
         }
     }
 

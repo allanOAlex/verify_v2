@@ -1,12 +1,12 @@
 var builder = WebApplication.CreateBuilder(args);
 
-string CORSOpenPolicy = "OpenCORSPolicy";
+string corsOpenPolicy = "OpenCORSPolicy";
 
 builder.Services.AddRouting(options => options.LowercaseUrls = true);
 builder.Services.AddCors(options =>
 {
     options.AddPolicy(
-      name: CORSOpenPolicy,
+      name: corsOpenPolicy,
       builder => {
           builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
       });
@@ -34,7 +34,7 @@ if (app.Environment.IsDevelopment())
 app.UseHsts();
 app.UseHttpsRedirection();
 app.UseStaticFiles();
-app.UseCors(CORSOpenPolicy);
+app.UseCors(corsOpenPolicy);
 app.UseRouting();
 app.UseAuthentication();
 app.UseAuthorization();

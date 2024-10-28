@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using BenchmarkDotNet.Attributes;
+﻿using BenchmarkDotNet.Attributes;
 
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -48,8 +42,8 @@ internal class ApiBenchmark
         // Initialize AccountRequest
         _accountRequest = new AccountRequest
         {
-            InitiatorBIC = "SCBLKENX",
-            RecipientBIC = "BARCKENX",
+            SenderBic = "SCBLKENX",
+            RecipientBic = "BARCKENX",
             RecipientAccountNumber = "2456345645"
         };
     }
@@ -57,7 +51,7 @@ internal class ApiBenchmark
     [Benchmark]
     public async Task<AccountInfo> BenchmarkFetchAccountData()
     {
-        var _apiEndPoint = _config["AppSettings:EndPoints:DHT:FetchAccountInfo"];
-        return await Methods.FetchAccountData(_apiClient, _accountRequest, _apiEndPoint!);
+        var apiEndPoint = _config["AppSettings:EndPoints:DHT:FetchAccountInfo"];
+        return await Methods.FetchAccountData(_apiClient, _accountRequest, apiEndPoint!);
     }
 }

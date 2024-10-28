@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Verify.Domain.Enums;
+﻿namespace Verify.Domain.Enums;
 public enum StorageType
 {
     InMemory,
