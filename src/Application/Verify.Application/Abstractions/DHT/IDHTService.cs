@@ -7,7 +7,8 @@ public interface IDhtService
 {
     
     //Task<DhtResponse<bool>> AddNodeToPeers(NodeInfo nodeInfo);
-    Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo> nodes, byte[] centralNodeHash, byte[] senderBicHash, byte[] recipinetBicHash);
+    //Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo> nodes, byte[] centralNodeHash, byte[] senderBicHash, byte[] recipinetBicHash);
+    Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo> nodes, string centralNodeBic, string senderBic, string recipinetBic);
     Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo);
     Task<DhtResponse<AccountInfo>> LookupAccountInMemoryAsync(AccountRequest accountRequest);
     Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash);

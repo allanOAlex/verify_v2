@@ -2,6 +2,7 @@
 using Newtonsoft.Json;
 
 using Refit;
+using System.Linq;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
@@ -102,7 +103,7 @@ internal sealed class DhtService : IDhtService
 
             if (nodes.Any())
             {
-               await AddNodeToPeers(nodes, currentNodeHashResponse.Data!, senderBicHash, recipientBicHash);
+               await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
             }
                 
         }
@@ -229,7 +230,7 @@ internal sealed class DhtService : IDhtService
         );
     }
 
-    public async Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo>? nodes, byte[] centralNodeHash, byte[] senderBicHash, byte[] recipinetBicHash)
+    public async Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo>? nodes, string centralNodeID, string senderBic, string recipinetBic)
     {
         try
         {
@@ -239,8 +240,8 @@ internal sealed class DhtService : IDhtService
             }
 
             var centralNode = nodes.FirstOrDefault(n => n.NodeBic == _configuration["NodeConfig:CurrentNode"]);
-            var senderNode = nodes.FirstOrDefault(n => n.NodeHash == senderBicHash);
-            var recipientNode = nodes.FirstOrDefault(n => n.NodeHash == recipinetBicHash);
+            var senderNode = nodes.FirstOrDefault(n => n.NodeBic == senderBic);
+            var recipientNode = nodes.FirstOrDefault(n => n.NodeBic == recipinetBic);
 
             if (centralNode == null && senderNode == null && recipientNode == null)
             {
@@ -249,47 +250,50 @@ internal sealed class DhtService : IDhtService
 
             if (centralNode != null)
             {
+
                 // Add the Central Node to Sender's peers if it doesn't already exist
-                if (senderNode != null && !senderNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(centralNode.NodeHash)))
+                //if (senderNode != null && !senderNode.KnownPeers!.Any(peer => peer.NodeBic.SequenceEqual(centralNode.NodeBic)))
+                //{
+                //    senderNode.KnownPeers!.Add(centralNode);
+                //}
+
+                if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
                 {
-                    senderNode.KnownPeers!.Add(centralNode);
+                    senderNode.KnownPeers.Add(senderNode!);
                 }
 
-                // Add the Central Node to Recipient's peers if it doesn't already exist
-                if (recipientNode != null && !recipientNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(centralNode.NodeHash)))
+                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
                 {
-                    recipientNode.KnownPeers!.Add(centralNode);
+                    recipientNode.KnownPeers.Add(senderNode!);
                 }
             }
 
             if (senderNode != null)
             {
-                // Add the Sender Node to Recipient's peers if it doesn't already exist
-                if (recipientNode != null && !recipientNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(senderNode.NodeHash)))
+
+                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
                 {
-                    recipientNode.KnownPeers!.Add(senderNode);
+                    centralNode.KnownPeers.Add(senderNode!);
                 }
 
-                // Add the Sender Node to Central's peers if it doesn't already exist
-                if (centralNode != null && !centralNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(senderNode.NodeHash)))
+                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
                 {
-                    centralNode.KnownPeers!.Add(senderNode);
+                    recipientNode.KnownPeers.Add(senderNode!);
                 }
             }
 
             if (recipientNode != null)
             {
-                // Add the Recipient Node to Sender's peers if it doesn't already exist
-                if (senderNode != null && !senderNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(recipientNode.NodeHash)))
+                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode!.NodeBic)))
                 {
-                    senderNode.KnownPeers!.Add(recipientNode);
+                    centralNode.KnownPeers.Add(recipientNode!);
                 }
 
-                // Add the Recipient Node to Central's peers if it doesn't already exist
-                if (centralNode != null && !centralNode.KnownPeers!.Any(peer => peer.NodeHash.SequenceEqual(recipientNode.NodeHash)))
+                if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode.NodeBic)))
                 {
-                    centralNode.KnownPeers!.Add(recipientNode);
+                    senderNode.KnownPeers.Add(recipientNode!);
                 }
+
             }
 
             // Persist changes back to the DHT
@@ -309,6 +313,7 @@ internal sealed class DhtService : IDhtService
             }
 
             return DhtResponse<bool>.Success("Successfully added nodes to peers", true);
+
         }
         catch (Exception ex)
         {
