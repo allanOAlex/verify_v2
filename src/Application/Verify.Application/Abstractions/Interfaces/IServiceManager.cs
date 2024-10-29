@@ -1,5 +1,4 @@
-﻿using Quartz;
-using Verify.Application.Abstractions.DHT;
+﻿using Verify.Application.Abstractions.DHT;
 using Verify.Application.Abstractions.DHT.Jobs;
 using Verify.Application.Abstractions.IServices;
 

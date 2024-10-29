@@ -1,7 +1,6 @@
 ﻿using System.Text;
+using System.Text.Json;
 using Confluent.Kafka;
-
-using Newtonsoft.Json;
 using Verify.Application.Abstractions.MessageQueuing;
 
 namespace Verify.Infrastructure.Implementations.MessageQueuing.Transports.Kafka;
@@ -50,7 +49,7 @@ internal sealed class KafkaMessageConsumer : IMessageConsumer
     {
         // Deserialization using JSON (can be changed to a preferred format)
 
-        return JsonConvert.DeserializeObject<T>(Encoding.UTF8.GetString(data));
+        return JsonSerializer.Deserialize<T>(Encoding.UTF8.GetString(data));
 
     }
 

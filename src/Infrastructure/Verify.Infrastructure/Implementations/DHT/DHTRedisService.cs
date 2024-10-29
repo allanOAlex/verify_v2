@@ -1,7 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 using StackExchange.Redis;
-
+using System.Text.Json;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
@@ -68,7 +67,8 @@ internal sealed class DhtRedisService : IDhtRedisService
     {
         try
         {
-            var exists = await _redisDatabase.SortedSetRankAsync(key, JsonConvert.SerializeObject(hash));
+            var serializedHash = JsonSerializer.Serialize(hash);
+            var exists = await _redisDatabase.SortedSetRankAsync(key, serializedHash);
             return exists.HasValue
                 ? DhtResponse<bool>.Success("Node exists", true)
                 : DhtResponse<bool>.Failure("Node does not exist");
@@ -89,7 +89,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 return DhtResponse<NodeInfo>.Failure("Node not found.");
             }
 
-            var node = JsonConvert.DeserializeObject<NodeInfo>(nodeData!);
+            var node = JsonSerializer.Deserialize<NodeInfo>(nodeData!);
             return DhtResponse<NodeInfo>.Success("Node retrieved successfully", node!);
         }
         catch (JsonException jsonEx)
@@ -109,7 +109,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 var serializedNodeInfo = await _redisDatabase.HashGetAsync(key, node);
                 if (!serializedNodeInfo.IsNullOrEmpty)
                 {
-                    nodeList.Add(DeserializeNodeInfo(serializedNodeInfo));
+                    nodeList.Add(JsonSerializer.Deserialize<NodeInfo>(serializedNodeInfo!)!);
                 }
             }
 
@@ -134,7 +134,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 var serializedNodeInfo = await _redisDatabase.HashGetAsync(key, node);
                 if (!serializedNodeInfo.IsNullOrEmpty)
                 {
-                    nodeList.Add(DeserializeNodeInfo(serializedNodeInfo));
+                    nodeList.Add(JsonSerializer.Deserialize<NodeInfo>(serializedNodeInfo!)!);
                 }
             }
 
@@ -160,7 +160,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
             // Filter to include only those nodes with the same bicHash
             var filteredNodes = sortedNodes
-                .Select(nodeData => JsonConvert.DeserializeObject<NodeInfo>(nodeData!))
+                .Select(nodeData => JsonSerializer.Deserialize<NodeInfo>(nodeData!))
                 .Where(node => node!.NodeHash.SequenceEqual(bicHash))
                 .ToList();
 
@@ -207,7 +207,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             // Filter nodes with matching bicHash concurrently
             var tasks = sortedNodes.Select(nodeData =>
             {
-                var node = JsonConvert.DeserializeObject<NodeInfo>(nodeData!);
+                var node = JsonSerializer.Deserialize<NodeInfo>(nodeData!);
                 return Task.FromResult(node!.NodeHash.SequenceEqual(bicHash) ? node : null);
             });
 
@@ -252,7 +252,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
             }
 
-            var firstNode = JsonConvert.DeserializeObject<NodeInfo>(firstNodeData.First()!);
+            var firstNode = JsonSerializer.Deserialize<NodeInfo>(firstNodeData.First()!);
 
             // Check for exact match first
             if (firstNode!.NodeHash.SequenceEqual(bicHash))
@@ -297,7 +297,7 @@ internal sealed class DhtRedisService : IDhtRedisService
         int targetDistance = DhtUtilities.CalculateXorDistance(nodeHash, currentNodehash.Data!);
         var redisBucketsKey = $"dht:buckets{targetDistance}";
         var closestNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, targetDistance - k, targetDistance + k, Exclude.None, Order.Ascending, 0, k);
-        return closestNodes.Select(nodeData => JsonConvert.DeserializeObject<NodeInfo>(nodeData!)).ToList()!;
+        return closestNodes.Select(nodeData => JsonSerializer.Deserialize<NodeInfo>(nodeData!)).ToList()!;
     }
 
     public async Task<List<NodeInfo>> GetKClosestNodesWithAlphaAsync(byte[] nodeHash, int k = 20, int alpha = 3)
@@ -362,7 +362,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             return DhtResponse<AccountInfo>.Failure("Account not found.");
         }
 
-        var node = JsonConvert.DeserializeObject<AccountInfo>(nodeData!);
+        var node = JsonSerializer.Deserialize<AccountInfo>(nodeData!);
         return DhtResponse<AccountInfo>.Success("Account retrieved successfully", node!);
     }
 
@@ -374,7 +374,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             var allNodes = await _redisDatabase.HashGetAllAsync(key);
             foreach (var nodeEntry in allNodes)
             {
-                nodes.Add(DeserializeNodeInfo(nodeEntry.Value));
+                nodes.Add(JsonSerializer.Deserialize<NodeInfo>(nodeEntry.Value!)!);
             }
 
             return nodes.Any()
@@ -397,7 +397,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             var jsonData = await _redisDatabase.StringGetAsync(nodeBic.ToString());
             if (!jsonData.IsNull)
             {
-                nodes.Add(JsonConvert.DeserializeObject<NodeInfo>(jsonData!)!);
+                nodes.Add(JsonSerializer.Deserialize<NodeInfo>(jsonData!)!);
             }
         }
 
@@ -428,7 +428,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             RedisValue serializedNodeInfo = await _redisDatabase.HashGetAsync(nodeKey, leastRecentlySeenNodeHash.Data);
             if (!serializedNodeInfo.IsNullOrEmpty)
             {
-                var nodeInfo = JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!);
+                var nodeInfo = JsonSerializer.Deserialize<NodeInfo>(serializedNodeInfo!);
                 return DhtResponse<NodeInfo>.Success("Least recently seen node retrieved", nodeInfo!);
             }
         }
@@ -438,20 +438,36 @@ internal sealed class DhtRedisService : IDhtRedisService
 
     public async Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
     {
-        await _redisDatabase.HashSetAsync(key, field, serializedValue);
+        //await _redisDatabase.HashSetAsync(key, field, serializedValue);
+        //if (expiry.HasValue && !isCentralNode)
+        //{
+        //    await _redisDatabase.KeyExpireAsync(key, expiry);
+        //}
+
+        var batch = _redisDatabase.CreateBatch();
+
+        // Add the HashSet operation to the batch
+        var hashSetTask = batch.HashSetAsync(key, field, serializedValue);
+
+        Task? expiryTask = null;
         if (expiry.HasValue && !isCentralNode)
         {
-            await _redisDatabase.KeyExpireAsync(key, expiry);
+            expiryTask = batch.KeyExpireAsync(key, expiry);
+        }
+
+        await hashSetTask;
+        if (expiryTask != null)
+        {
+            await expiryTask; 
         }
 
         return DhtResponse<bool>.Success("Node added/updated successfully", true);
     }
 
-    public async Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, NodeInfo value, double score)
+    public async Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, string serializedValue, double score)
     {
         try
         {
-            var serializedValue = SerializeNodeInfo(value);
             string countKey = $"{bucketKey}:count";
             var added = await _redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score);
 
@@ -459,7 +475,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             await _redisDatabase.StringIncrementAsync(countKey);
 
             return added
-                ? DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", value } })
+                ? DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", serializedValue } })
                 : DhtResponse<bool>.Success("Failed to Add Node to DHT", true);
         }
         catch (RedisServerException ex) when (ex.Message.Contains("WRONGTYPE"))
@@ -468,23 +484,17 @@ internal sealed class DhtRedisService : IDhtRedisService
         }
     }
 
-    public async Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, NodeInfo value)
+    public async Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, string serializedValue)
     {
-        var serializedValue = SerializeNodeInfo(value);
         await _redisDatabase.ListRightPushAsync(bucketKey, serializedValue);
 
-        return DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object> { { "node", value } });
+        return DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object> { { "node", serializedValue } });
     }
 
-    public async Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, AccountInfo value, double score)
+    public async Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, string serializedValue, double score)
     {
-        var serializedValue = SerializeAccountInfo(value);
-        await _redisDatabase.SortedSetAddAsync(bucketKey, value.AccountHash, score);
-        await _redisDatabase.HashSetAsync(accountKey, value.AccountHash, serializedValue);
-        await _redisDatabase.StringSetAsync(value.AccountHash, serializedValue, TimeSpan.FromHours(24));
-
-        return await _redisDatabase.SortedSetAddAsync(bucketKey, value.AccountHash, score)
-            ? DhtResponse<bool>.Success("Account added to DHT", true, null, new Dictionary<string, object>() { { "account", value } })
+        return await _redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score)
+            ? DhtResponse<bool>.Success("Account added to DHT", true, null, new Dictionary<string, object>() { { "account", serializedValue } })
             : DhtResponse<bool>.Success("Failed to Add Account to DHT", true);
     }
 
@@ -497,7 +507,8 @@ internal sealed class DhtRedisService : IDhtRedisService
 
     public async Task<DhtResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo)
     {
-        var wasRemoved = await _redisDatabase.SortedSetRemoveAsync(key, JsonConvert.SerializeObject(nodeInfo.NodeHash));
+        var serializedHash = JsonSerializer.Serialize(nodeInfo.NodeHash);
+        var wasRemoved = await _redisDatabase.SortedSetRemoveAsync(key, serializedHash);
         if (wasRemoved)
         {
             // Optionally, remove the node from the 'nodes' hash if you have one
@@ -517,8 +528,10 @@ internal sealed class DhtRedisService : IDhtRedisService
         // Watch the key to ensure the transaction only succeeds if the key hasn't changed
         transaction.AddCondition(Condition.KeyExists(bicHash));
 
+
+        var serializedNodeInfo = JsonSerializer.Serialize(nodeInfo);
         // Queue the update operation in the transaction (update node info in the hash)
-        _ = transaction.HashSetAsync("dht:nodes", bicHash, SerializeNodeInfo(nodeInfo));
+        _ = transaction.HashSetAsync("dht:nodes", bicHash, serializedNodeInfo);
 
         if (expiry.HasValue)
         {
@@ -535,10 +548,10 @@ internal sealed class DhtRedisService : IDhtRedisService
         var dhtNodes = await _redisDatabase.HashGetAllAsync(redisNodesKey);
         foreach (var nodeHash in dhtNodes)
         {
-            var nodeInfoResponse = DeserializeNodeInfo(nodeHash.Value);
-            if (ShouldEvictNode(nodeInfoResponse))
+            var nodeInfoResponse = JsonSerializer.Deserialize<NodeInfo>(nodeHash.Value!);
+            if (ShouldEvictNode(nodeInfoResponse!))
             {
-                await RemoveSortedSetNodeAsync(redisNodesKey, nodeInfoResponse);
+                await RemoveSortedSetNodeAsync(redisNodesKey, nodeInfoResponse!);
             }
         }
     }
@@ -564,21 +577,6 @@ internal sealed class DhtRedisService : IDhtRedisService
         {
             throw new ApplicationException($"Error retrieving least recently seen node hash: {ex.Message}", ex);
         }
-    }
-
-    private NodeInfo DeserializeNodeInfo(RedisValue serializedNodeInfo)
-    {
-        return JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!)!;
-    }
-
-    private string SerializeNodeInfo(NodeInfo nodeInfo)
-    {
-        return JsonConvert.SerializeObject(nodeInfo);
-    }
-
-    private string SerializeAccountInfo(AccountInfo accountInfo)
-    {
-        return JsonConvert.SerializeObject(accountInfo);
     }
 
     private bool ShouldEvictNode(NodeInfo nodeInfo)

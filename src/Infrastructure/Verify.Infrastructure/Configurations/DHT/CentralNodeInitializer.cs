@@ -1,9 +1,7 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-
-using Newtonsoft.Json;
-
+using System.Text.Json;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Bank;
 
@@ -51,9 +49,10 @@ public sealed class CentralNodeInitializer : IHostedService
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
 
+            var serializedCentralNode = JsonSerializer.Serialize(centralNode);
             // Add the central node to Redis without expiry
-            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{{0}}", centralNode, 0);
-            await _dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, JsonConvert.SerializeObject(centralNode), isCentralNode: true);
+            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{{0}}", serializedCentralNode, 0);
+            await _dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, serializedCentralNode, isCentralNode: true);
         }
     }
 

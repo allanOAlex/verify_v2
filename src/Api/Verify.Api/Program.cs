@@ -22,13 +22,6 @@ builder.Services.AddCors(options =>
       });
 });
 
-//TODO - ConfigureHttpClientFactory
-//builder.Services.AddHttpClient("DHT", client => 
-//{
-//    client.BaseAddress = new Uri("https://localhost:7260/");
-//    client.Timeout = TimeSpan.FromSeconds(1000);
-
-//});
 builder.Services.AddHttpClient();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());

@@ -1,7 +1,6 @@
 ﻿using System.Collections.Concurrent;
+using System.Text.Json;
 using Microsoft.Extensions.Configuration;
-
-using Newtonsoft.Json;
 using Polly;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Bank;
@@ -78,8 +77,9 @@ internal sealed class NodeManagementService : INodeManagementService
         if (existingNodeResponse.Data != null)
         {
             var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
-            await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, JsonConvert.SerializeObject(updatedNode), TimeSpan.FromHours(24), isCentralNode);
-            await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, updatedNode, distance);
+            var serializedNode = JsonSerializer.Serialize(updatedNode);
+            await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+            await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
 
             return DhtResponse<bool>.Success("Node updated successfully", true, null, new Dictionary<string, object>() { { "node", updatedNode } });
         }
@@ -143,8 +143,9 @@ internal sealed class NodeManagementService : INodeManagementService
         var bucketCount = await _dhtRedisService.GetBucketCountAsync(redisBucketsKey);
         if (bucketCount.Data < BucketSize)
         {
-            await _dhtRedisService.SetNodeAsync(redisNodesKey, nodeInfo.NodeHash, JsonConvert.SerializeObject(nodeInfo), TimeSpan.FromHours(24), isCentralNode);
-            return await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, nodeInfo, distance);
+            var serializedNode = JsonSerializer.Serialize(nodeInfo);
+            await _dhtRedisService.SetNodeAsync(redisNodesKey, nodeInfo.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+            return await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
 
         }
         else if (withEviction)
@@ -165,17 +166,19 @@ internal sealed class NodeManagementService : INodeManagementService
             var isReachable = await PingNodeAsync(leastRecentlySeenNode.Data!);
             if (!isReachable.Data)
             {
+                var serializedNode = JsonSerializer.Serialize(newNode);
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
-                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
-                await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24), isCentralNode);
+                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
+                await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
                 return DhtResponse<bool>.Success("Replaced least recently seen node", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
 
             // If reachable, check if we should replace the least recently seen node based on LRS/LRU
             if (ShouldReplaceNode(leastRecentlySeenNode.Data!, newNode, isCentralNode))
             {
+                var serializedNodeToAdd = JsonSerializer.Serialize(newNode);
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
-                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
+                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNodeToAdd, distance);
                 return DhtResponse<bool>.Success("Replaced least recently seen node based on LRS policy", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
             else
@@ -184,8 +187,9 @@ internal sealed class NodeManagementService : INodeManagementService
             }
         }
 
-        await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, newNode, distance);
-        await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, JsonConvert.SerializeObject(newNode), TimeSpan.FromHours(24), isCentralNode);
+        var serializedNewNode = JsonSerializer.Serialize(newNode);
+        await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNewNode, distance);
+        await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, serializedNewNode, TimeSpan.FromHours(24), isCentralNode);
         return DhtResponse<bool>.Success("No node to replace: - added new node successfully", true, null, new Dictionary<string, object>() { { "node", newNode } });
 
     }

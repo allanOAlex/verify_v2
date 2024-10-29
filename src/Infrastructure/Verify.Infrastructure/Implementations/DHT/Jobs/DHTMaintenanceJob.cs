@@ -16,11 +16,7 @@ namespace Verify.Infrastructure.Implementations.DHT.Jobs
         public async Task Execute(IJobExecutionContext context)
         {
             await _dHtRedisService.CleanUpInactiveNodesAsync("dht:nodes");
-
-            // We could add other maintenance tasks here
-                
-
-            // Log or report the task completion
+            
         }
     }
 }

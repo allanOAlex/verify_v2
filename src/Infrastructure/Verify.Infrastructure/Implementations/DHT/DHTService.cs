@@ -1,12 +1,11 @@
 ﻿using Microsoft.Extensions.Configuration;
-using Newtonsoft.Json;
 using Quartz;
 using Refit;
+using System.Text.Json;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
-using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Infrastructure.Utilities.DHT;
 using Verify.Infrastructure.Utilities.DHT.ApiClients;
 
@@ -47,25 +46,25 @@ internal sealed class DhtService : IDhtService
 
     public async Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest)
     {
-        //var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
-        //if (accountResponse.Successful)
-        //    return accountResponse;
+        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+        if (accountResponse.Successful)
+            return accountResponse;
 
-        var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
-        var senderBicHash = senderBicHashResponse.Data ?? [];
+        //var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
+        //var senderBicHash = senderBicHashResponse.Data ?? [];
 
-        var recipientBicHashResponse = await _hashingService.ByteHash(accountRequest.RecipientBic);
-        var recipientBicHash = recipientBicHashResponse.Data ?? [];
+        //var recipientBicHashResponse = await _hashingService.ByteHash(accountRequest.RecipientBic);
+        //var recipientBicHash = recipientBicHashResponse.Data ?? [];
 
-        // Parallel checks for existence
-        var senderExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
-        var recipientExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
+        //// Parallel checks for existence
+        //var senderExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
+        //var recipientExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
 
-        var senderExists = await senderExistsTask;
-        var recipientExists = await recipientExistsTask;
+        //var senderExists = await senderExistsTask;
+        //var recipientExists = await recipientExistsTask;
 
-        // Collect tasks for adding nodes if they don't exist
-        var addNodeTasks = new List<Task<DhtResponse<bool>>>();
+        //// Collect tasks for adding nodes if they don't exist
+        //var addNodeTasks = new List<Task<DhtResponse<bool>>>();
 
         //if (senderExists.Data && recipientExists.Data)
         //{
@@ -101,26 +100,26 @@ internal sealed class DhtService : IDhtService
         //    await _scheduler.TriggerJob(addPeersJobKey, jobDataMap);
         //}
 
-        if (!senderExists.Data)
-        {
-            var addInitiatorTask = AddNodeToDhtAsync(accountRequest.SenderBic, senderBicHash);
-            addNodeTasks.Add(addInitiatorTask);
-        }
+        //if (!senderExists.Data)
+        //{
+        //    var addInitiatorTask = AddNodeToDhtAsync(accountRequest.SenderBic, senderBicHash);
+        //    addNodeTasks.Add(addInitiatorTask);
+        //}
 
-        if (!recipientExists.Data)
-        {
-            var addRecipientTask = AddNodeToDhtAsync(accountRequest.RecipientBic, recipientBicHash);
-            addNodeTasks.Add(addRecipientTask);
-        }
+        //if (!recipientExists.Data)
+        //{
+        //    var addRecipientTask = AddNodeToDhtAsync(accountRequest.RecipientBic, recipientBicHash);
+        //    addNodeTasks.Add(addRecipientTask);
+        //}
 
-        // Run all add tasks in parallel if there are nodes to add
-        if (addNodeTasks.Count > 0)
-        {
-            var addNodeResponses = await Task.WhenAll(addNodeTasks);
-            if (addNodeResponses.Any(response => !response.Successful))
-            {
-                return DhtResponse<AccountInfo>.Failure("Failed to add one or more nodes to the DHT.");
-            }
+        //// Run all add tasks in parallel if there are nodes to add
+        //if (addNodeTasks.Count > 0)
+        //{
+        //    var addNodeResponses = await Task.WhenAll(addNodeTasks);
+        //    if (addNodeResponses.Any(response => !response.Successful))
+        //    {
+        //        return DhtResponse<AccountInfo>.Failure("Failed to add one or more nodes to the DHT.");
+        //    }
 
 
 
@@ -179,26 +178,30 @@ internal sealed class DhtService : IDhtService
             //   await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
             //}
 
-        }
+        //}
 
-        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
-        if (accountResponse.Successful)
-            return accountResponse;
+        
 
-        var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+        //var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
 
-        var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, recipientBicHash);
-        if (!responsibleNodeResponse.Successful)
-        {
-            return DhtResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
-        }
+        //var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, recipientBicHash);
+        //if (!responsibleNodeResponse.Successful)
+        //{
+        //    return DhtResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
+        //}
 
-        var responsibleNode = responsibleNodeResponse.Data;
-        if (string.IsNullOrEmpty(responsibleNode!.NodeUri.Scheme) || string.IsNullOrEmpty(responsibleNode.NodeUri.Host) || responsibleNode.NodeUri.Port <= 0)
-        {
-            return DhtResponse<AccountInfo>.Failure("Invalid node URI components. Cannot construct query URL.");
-        }
-        var queryUrl = $"{responsibleNode.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
+        //var responsibleNode = responsibleNodeResponse.Data;
+        //if (string.IsNullOrEmpty(responsibleNode!.NodeUri.Scheme) || string.IsNullOrEmpty(responsibleNode.NodeUri.Host) || responsibleNode.NodeUri.Port <= 0)
+        //{
+        //    return DhtResponse<AccountInfo>.Failure("Invalid node URI components. Cannot construct query URL.");
+        //}
+
+        var queryUrlResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.RecipientBic);
+        var queryUrlResponseUri = new Uri(queryUrlResponse.Data!);
+        var queryUrl = $"{queryUrlResponseUri.Scheme}://{queryUrlResponseUri.Host}:{queryUrlResponseUri.Port}/";
+        //var queryUrl = $"{responsibleNode.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
+
+
         var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
         if (!accountDataResponse.Successful)
         {
@@ -309,8 +312,28 @@ internal sealed class DhtService : IDhtService
 
     public async Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo)
     {
-        var accountHashResponse = await _hashingService.ByteHash(accountInfo.AccountNumber!);
-        await _dHtRedisService.SetNodeAsync("dht:accounts", accountHashResponse.Data!, JsonConvert.SerializeObject(accountInfo), TimeSpan.FromHours(24));
+        //var accountHashResponse = await _hashingService.ByteHash(accountInfo.AccountNumber!);
+        //await _dHtRedisService.SetNodeAsync("dht:accounts", accountHashResponse.Data!, JsonSerializer.Serialize(accountInfo), TimeSpan.FromHours(24));
+        //return DhtResponse<AccountInfo>.Success(
+        //    "Account data stored successfully.",
+        //    new AccountInfo
+        //    {
+        //        AccountHash = accountInfo.AccountHash,
+        //        AccountBic = accountInfo.AccountBic,
+        //        AccountNumber = accountInfo.AccountNumber,
+        //        AccountName = accountInfo.AccountName
+        //    }
+        //);
+
+        // Hash the account number and prepare the serialized data concurrently
+        var accountHashTask = _hashingService.ByteHash(accountInfo.AccountNumber!);
+        var serializedAccountInfo = JsonSerializer.Serialize(accountInfo);
+
+        await Task.WhenAll(accountHashTask);
+
+        var accountHashResponse = await accountHashTask;
+        await _dHtRedisService.SetNodeAsync("dht:accounts", accountHashResponse.Data!, serializedAccountInfo, TimeSpan.FromHours(24));
+
         return DhtResponse<AccountInfo>.Success(
             "Account data stored successfully.",
             new AccountInfo

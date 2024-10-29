@@ -28,9 +28,9 @@ public interface IDhtRedisService
     Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false);
 
     // Sorted set to store nodes by distance or other criteria
-    Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, NodeInfo value, double score);
-    Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, NodeInfo value);
-    Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, AccountInfo value, double score);
+    Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, string serializedValue, double score);
+    Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, string serializedValue);
+    Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, string serializedValue, double score);
     Task<DhtResponse<bool>> RemoveNodeAsync(string key, byte[] field);
     Task<DhtResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo);
     Task<DhtResponse<bool>> UpdateUsingTransaction(byte[] bicHash, NodeInfo nodeInfo, TimeSpan? expiry = null);

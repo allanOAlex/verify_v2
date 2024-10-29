@@ -32,7 +32,8 @@ internal sealed class RedisMultiplexerCacheService : ICacheService
 
         // Use absoluteExpiration for the expiration time.
         // To handle sliding expiration, you'll need to implement a logic to reset the expiration time on access.
+        var serializedValue = JsonSerializer.Serialize(value);
         var expirationTime = absoluteExpiration > slidingExpiration ? absoluteExpiration : slidingExpiration;
-        await db.StringSetAsync(key, JsonSerializer.Serialize(value), expirationTime);
+        await db.StringSetAsync(key, serializedValue, expirationTime);
     }
 }

@@ -27,7 +27,6 @@ using Verify.Infrastructure.Utilities.DHT.ApiClients;
 using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Application.Abstractions.DHT.Jobs;
 using DbContext = Verify.Persistence.DataContext.DbContext;
-using Quartz.Simpl;
 
 namespace Verify.Infrastructure.Utilities;
 public static class DependencyInjection
@@ -180,7 +179,6 @@ public static class DependencyInjection
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddTransient(typeof(IBaseRepository<>), typeof(BaseRepository<>));
-
         services.AddScoped<ILogRepository, LogRepository>();
 
         return services;

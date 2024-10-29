@@ -1,7 +1,6 @@
 ﻿using System.Text;
+using System.Text.Json;
 using Confluent.Kafka;
-
-using Newtonsoft.Json;
 using Verify.Application.Abstractions.MessageQueuing;
 
 namespace Verify.Infrastructure.Implementations.MessageQueuing.Transports.Kafka;
@@ -32,6 +31,7 @@ internal sealed class KafkaMessageProducer : IMessageProducer
     private byte[] Serialize<T>(T message)
     {
         // Use a serialization strategy; here JSON is used as an example
-        return Encoding.UTF8.GetBytes(JsonConvert.SerializeObject(message));
+        var serializedMessage = JsonSerializer.Serialize(message);
+        return Encoding.UTF8.GetBytes(serializedMessage);
     }
 }
