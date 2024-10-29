@@ -30,13 +30,13 @@ public class AccountController : ControllerBase
 
 
     [HttpGet("ping")]
-    public async Task<ActionResult<bool>> Ping()
+    public ActionResult<bool> Ping()
     {
         return Ok(true);
     }
 
     [HttpPost("fetchaccountinfo")]
-    public async Task<ActionResult<AccountResponse>> FetchAccountInfo([FromBody] AccountRequest accountRequest)
+    public ActionResult<AccountResponse> FetchAccountInfo([FromBody] AccountRequest accountRequest)
     {
         var accountInfo = AccountData.FirstOrDefault(a => a.AccountNumber == accountRequest.RecipientAccountNumber);
         if (accountInfo == null)

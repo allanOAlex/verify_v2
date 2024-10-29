@@ -1,6 +1,4 @@
 ﻿using System.Net.Http.Json;
-using Microsoft.Extensions.Configuration;
-
 using Web.Client.Console.Dtos;
 
 namespace Web.Client.Console.ApiClients;
@@ -9,13 +7,12 @@ namespace Web.Client.Console.ApiClients;
 internal sealed class ApiClient : IApiClient
 {
     private readonly HttpClient _httpClient;
-    private readonly IConfiguration _configuration;
 
 
-    public ApiClient(IHttpClientFactory httpClientFactory, IConfiguration configuration)
+    public ApiClient(IHttpClientFactory httpClientFactory)
     {
-        _configuration = configuration;
         _httpClient = httpClientFactory.CreateClient("DHT");
+        _httpClient.BaseAddress = new Uri("https://localhost:7260/");
     }
 
     public async Task<AccountInfo> FetchAccountData(AccountRequest request, string apiEndPoint)

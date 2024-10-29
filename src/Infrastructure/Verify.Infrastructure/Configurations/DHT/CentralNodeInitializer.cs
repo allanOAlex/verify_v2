@@ -52,8 +52,8 @@ public sealed class CentralNodeInitializer : IHostedService
             };
 
             // Add the central node to Redis without expiry
-            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{0}", centralNode, 0);
-            await _dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, JsonConvert.SerializeObject(centralNode), null, isCentralNode: true);
+            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{{0}}", centralNode, 0);
+            await _dhtRedisService.SetNodeAsync("dht:nodes", centralNodeHash.Data!, JsonConvert.SerializeObject(centralNode), isCentralNode: true);
         }
     }
 

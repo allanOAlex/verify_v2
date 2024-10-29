@@ -27,6 +27,7 @@ using Verify.Infrastructure.Utilities.DHT.ApiClients;
 using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Application.Abstractions.DHT.Jobs;
 using DbContext = Verify.Persistence.DataContext.DbContext;
+using Quartz.Simpl;
 
 namespace Verify.Infrastructure.Utilities;
 public static class DependencyInjection
@@ -94,33 +95,14 @@ public static class DependencyInjection
             });
         });
 
-        //Register Quartz services
-        //services.AddQuartz(q =>
-        //{
-        //    // Microsoft DI Job Factory (this replaces UseMicrosoftDependencyInjectionJobFactory)
-        //    q.UseJobFactory<MicrosoftDependencyInjectionJobFactory>();
+        services.Configure<QuartzOptions>(configuration.GetSection("Quartz"));
 
-        //    // Register the job
-        //    q.ScheduleJob<DHTMaintenanceJob>(trigger => trigger
-        //        .WithIdentity("DHTMaintenanceJob-trigger")
-        //        .WithCronSchedule("0 0 * * * ?")); // Every hour
-        //});
-
-        //services.AddQuartz(q =>
-        //{
-        //    q.UseJobFactory<MicrosoftDependencyInjectionJobFactory>();
-
-        //    // Register the job
-        //    q.AddJob<DHTMaintenanceJob>(opts => opts
-        //    .WithIdentity("DHTMaintenanceJob"));
-
-        //    // Define the trigger
-        //    q.AddTrigger(opts => opts
-        //        .ForJob("DHTMaintenanceJob") // Link trigger to the job
-        //        .WithIdentity("DHTMaintenanceJob-trigger")
-        //        .WithCronSchedule("0 0 * * * ?")); // Every hour
-        //});
-
+        // if you are using persistent job store, you might want to alter some options
+        services.Configure<QuartzOptions>(options =>
+        {
+            options.Scheduling.IgnoreDuplicates = true; // default: false
+            options.Scheduling.OverWriteExistingData = true; // default: true
+        });
 
         services.AddQuartz(q =>
         {
@@ -136,23 +118,17 @@ public static class DependencyInjection
                     .WithInterval(TimeSpan.FromMinutes(5))
                     .RepeatForever())
             );
+
         });
 
         //Add the Quartz hosted service
         services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
-        //// Add IDatabase service
-        //services.AddSingleton(sp =>
-        //{
-        //    var connectionMultiplexer = ConnectionMultiplexer.Connect(configuration["Redis:ConnectionString"]);
-        //    return connectionMultiplexer.GetDatabase();
-        //});
-
         switch (cacheSettings.CacheType)
         {
-            case string type when type.Equals("redis", StringComparison.OrdinalIgnoreCase):
+            case { } type when type.Equals("redis", StringComparison.OrdinalIgnoreCase):
 
-                services.AddSingleton<IConnectionMultiplexer>(sp => ConnectionMultiplexer.Connect(cacheSettings.Redis!.Configuration!));
+                services.AddSingleton<IConnectionMultiplexer>(_ => ConnectionMultiplexer.Connect(cacheSettings.Redis!.Configuration!));
 
                 // Register the IDatabase from the connection multiplexer
                 services.AddScoped(sp =>
@@ -170,7 +146,7 @@ public static class DependencyInjection
                 services.AddSingleton<ICacheService, RedisCacheService>();
                 break;
 
-            case string type when type.Equals("azure", StringComparison.OrdinalIgnoreCase):
+            case { } type when type.Equals("azure", StringComparison.OrdinalIgnoreCase):
                 services.AddStackExchangeRedisCache(options =>
                 {
                     options.Configuration = cacheSettings.Azure!.ConnectionString;
@@ -178,7 +154,7 @@ public static class DependencyInjection
                 services.AddSingleton<ICacheService, AzureCacheService>();
                 break;
 
-            case string type when type.Equals("aws", StringComparison.OrdinalIgnoreCase):
+            case { } type when type.Equals("aws", StringComparison.OrdinalIgnoreCase):
                 services.AddStackExchangeRedisCache(options =>
                 {
                     options.Configuration = cacheSettings.Aws!.Endpoint;
@@ -199,6 +175,7 @@ public static class DependencyInjection
         services.AddScoped<IHashingService, HashingService>();
         services.AddScoped<INodeManagementService, NodeManagementService>();
         services.AddScoped<IDhtMaintenanceJob, DhtMaintenanceJob>();
+        services.AddScoped<IAddNodeToPeersJob, AddNodeToPeersJob>();
         //services.AddHostedService<CentralNodeInitializer>();
 
         services.AddScoped<IUnitOfWork, UnitOfWork>();

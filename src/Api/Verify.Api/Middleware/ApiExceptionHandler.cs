@@ -77,9 +77,6 @@ public class ApiExceptionHandler : IExceptionHandler
 
                 problemDetails.Extensions["errors"] = errorList;
                 break;
-
-            default:
-                break;
         }
 
         httpContext.Response.StatusCode = problemDetails.Status ?? StatusCodes.Status500InternalServerError;

@@ -52,12 +52,12 @@ internal sealed class NodeManagementService : INodeManagementService
         return DhtResponse<string>.Failure("Node endpoint not found.");
     }
 
-    public async Task<DhtResponse<string>> GetNodeEndpointFromConfigAsync(string bankBic)
+    public DhtResponse<string> GetNodeEndpointFromConfigAsync(string bankBic)
     {
         var nodeEnpoint = _configuration[$"NodeConfig:{bankBic}"];
         if (!string.IsNullOrWhiteSpace(nodeEnpoint))
         {
-            return DhtResponse<string>.Success("Success", nodeEnpoint!);
+            return DhtResponse<string>.Success("Success", nodeEnpoint);
         }
 
         return DhtResponse<string>.Failure("No Endpoint defined for this particular node", string.Empty);
@@ -75,7 +75,7 @@ internal sealed class NodeManagementService : INodeManagementService
         string redisNodesKey = $"dht:nodes";
 
         var existingNodeResponse = await _dhtRedisService.GetNodeAsync(redisNodesKey, nodeInfo.NodeHash);
-        if (existingNodeResponse?.Data != null)
+        if (existingNodeResponse.Data != null)
         {
             var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
             await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, JsonConvert.SerializeObject(updatedNode), TimeSpan.FromHours(24), isCentralNode);
@@ -92,7 +92,7 @@ internal sealed class NodeManagementService : INodeManagementService
     public async Task<DhtResponse<bool>> PingNodeAsync(NodeInfo nodeInfo)
     {
         var pingUri = new Uri(nodeInfo.NodeUri, "ping");
-        var pingUrl = $"{nodeInfo!.NodeUri.Scheme}://{nodeInfo.NodeUri.Host}:{nodeInfo.NodeUri.Port}/";
+        var pingUrl = $"{nodeInfo.NodeUri.Scheme}://{nodeInfo.NodeUri.Host}:{nodeInfo.NodeUri.Port}/";
 
         // Define the retry policy with exponential backoff
         var retryPolicy = Policy
@@ -108,7 +108,7 @@ internal sealed class NodeManagementService : INodeManagementService
             using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2)))
             {
                 var nodeApiClient = _apiClientFactory.CreateClient(pingUrl);
-                var accountDetailsResponse = await nodeApiClient.PingNodeAsync();
+                var pingNodeResponse = await nodeApiClient.PingNodeAsync();
 
                 var response = await _httpClient.GetAsync(pingUri, cts.Token);
                 return response.IsSuccessStatusCode;
@@ -160,8 +160,7 @@ internal sealed class NodeManagementService : INodeManagementService
     private async Task<DhtResponse<bool>> EvictAndReplaceNode(string redisBucketsKey, string redisNodesKey, NodeInfo newNode, int distance, bool isCentralNode)
     {
         // ToDo: What if there is no nodes in the bucket?
-        var leastRecentlySeenNode = await _dhtRedisService.GetLeastRecentlySeenNodeAsync(redisBucketsKey, redisBucketsKey);
-        if (leastRecentlySeenNode != null)
+        if (await _dhtRedisService.GetLeastRecentlySeenNodeAsync(redisBucketsKey, redisBucketsKey) is { } leastRecentlySeenNode)
         {
             var isReachable = await PingNodeAsync(leastRecentlySeenNode.Data!);
             if (!isReachable.Data)

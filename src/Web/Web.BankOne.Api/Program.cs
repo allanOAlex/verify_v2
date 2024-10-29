@@ -7,8 +7,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(
       name: corsOpenPolicy,
-      builder => {
-          builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+      corsPolicyBuilder => {
+          corsPolicyBuilder
+              .AllowAnyOrigin()
+              .AllowAnyHeader()
+              .AllowAnyMethod();
       });
 });
 

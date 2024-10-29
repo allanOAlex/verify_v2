@@ -1,3 +1,4 @@
+using Newtonsoft.Json;
 using Verify.Api.Middleware;
 using Verify.Infrastructure.Utilities;
 
@@ -13,8 +14,11 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy(
       name: corsOpenPolicy,
-      builder => {
-          builder.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod();
+      corsPolicyBuilder => {
+          corsPolicyBuilder
+          .AllowAnyOrigin()
+          .AllowAnyHeader()
+          .AllowAnyMethod();
       });
 });
 
@@ -29,7 +33,12 @@ builder.Services.AddHttpClient();
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 builder.Services.AddInfrastructure(builder.Configuration);
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddNewtonsoftJson(options =>
+    {
+        options.SerializerSettings.ReferenceLoopHandling = ReferenceLoopHandling.Ignore;
+       
+    });
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

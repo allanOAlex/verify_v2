@@ -8,6 +8,6 @@ public static class AppConstants
     public static string GetCurrentNodeBIC(IConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(nameof(configuration));
-        return configuration!["NodeConfig:CurrentNode"]! ?? string.Empty;
+        return configuration["NodeConfig:CurrentNode"]!;
     }
 }

@@ -1,12 +1,12 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Newtonsoft.Json;
-
+using Quartz;
 using Refit;
-using System.Linq;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
+using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Infrastructure.Utilities.DHT;
 using Verify.Infrastructure.Utilities.DHT.ApiClients;
 
@@ -18,6 +18,7 @@ internal sealed class DhtService : IDhtService
     private readonly IHashingService _hashingService;
     private readonly INodeManagementService _nodeManagementService;
     private readonly IDhtRedisService _dHtRedisService;
+    private readonly IScheduler _scheduler;
 
 
     public DhtService(
@@ -26,24 +27,29 @@ internal sealed class DhtService : IDhtService
         IConfiguration configuration,
         IHashingService hashingService,
         INodeManagementService nodeManagementService,
-        IDhtRedisService dhtRedisService)
+        IDhtRedisService dhtRedisService,
+        ISchedulerFactory schedulerFactory
+        )
     {
         var httpClient = httpClientFactory.CreateClient();
         httpClient.Timeout = TimeSpan.FromSeconds(100);
         _apiClientFactory = apiClientFactory;
-        _configuration = configuration;
-        _hashingService = hashingService;
-        _nodeManagementService = nodeManagementService;
-        _dHtRedisService = dhtRedisService;
+
+        _scheduler = schedulerFactory.GetScheduler().GetAwaiter().GetResult();
+
+        _hashingService = hashingService ?? throw new ArgumentNullException(nameof(hashingService));
+        _nodeManagementService = nodeManagementService ?? throw new ArgumentNullException(nameof(nodeManagementService));
+        _dHtRedisService = dhtRedisService ?? throw new ArgumentNullException(nameof(dhtRedisService));
+        _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
 
     }
 
 
     public async Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest)
     {
-        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
-        if (accountResponse.Successful)
-            return accountResponse;
+        //var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+        //if (accountResponse.Successful)
+        //    return accountResponse;
 
         var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
         var senderBicHash = senderBicHashResponse.Data ?? [];
@@ -60,6 +66,40 @@ internal sealed class DhtService : IDhtService
 
         // Collect tasks for adding nodes if they don't exist
         var addNodeTasks = new List<Task<DhtResponse<bool>>>();
+
+        //if (senderExists.Data && recipientExists.Data)
+        //{
+        //    var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+        //    var nodesBicHashes = new List<byte[]>
+        //    {
+        //        senderBicHash,
+        //        recipientBicHash,
+        //        currentNodeHashResponse.Data!
+        //    };
+
+        //    var jobDataMap = new JobDataMap
+        //    {
+        //        ["NodesBicHashes"] = nodesBicHashes, 
+        //        ["SenderBic"] = accountRequest.SenderBic, 
+        //        ["RecipientBic"] = accountRequest.RecipientBic 
+        //    };
+
+        //    var addPeersJobKey = new JobKey("AddNodeToPeersJob");
+        //    if (!await _scheduler.CheckExists(addPeersJobKey))
+        //    {
+        //        // Define the job only if it hasn't been added to Quartz
+        //        IJobDetail jobDetail = JobBuilder
+        //            .Create<AddNodeToPeersJob>()
+        //            .WithIdentity(addPeersJobKey)
+        //            .StoreDurably() // we need to store durably if no trigger is associated
+        //            .WithDescription("Add-Node-ToPeers-Job")
+        //            .Build();
+
+        //        await _scheduler.AddJob(jobDetail, true);
+        //    }
+
+        //    await _scheduler.TriggerJob(addPeersJobKey, jobDataMap);
+        //}
 
         if (!senderExists.Data)
         {
@@ -82,31 +122,68 @@ internal sealed class DhtService : IDhtService
                 return DhtResponse<AccountInfo>.Failure("Failed to add one or more nodes to the DHT.");
             }
 
-            var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
-            var nodesBicHashes = new List<byte[]>
-            {
-                senderBicHash,
-                recipientBicHash,
-                currentNodeHashResponse.Data!
-            };
 
-                
-            List<NodeInfo> nodes = [];
-            foreach (var nodesBicHash in nodesBicHashes)
-            {
-                var nodeResponse = await _dHtRedisService.GetNodeAsync("dht:nodes", nodesBicHash);
-                if (nodeResponse is { Successful: true, Data: not null })
-                {
-                    nodes.Add(nodeResponse.Data);
-                }
-            }
 
-            if (nodes.Any())
-            {
-               await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
-            }
-                
+
+            //**************************************************************************************************************************************************************
+
+            //var addPeersJobKey = new JobKey("AddNodeToPeersJob");
+            //if (!await _scheduler.CheckExists(addPeersJobKey))
+            //{
+            //    // Define the job only if it hasn't been added to Quartz
+            //    IJobDetail jobDetail = JobBuilder
+            //        .Create<AddNodeToPeersJob>()
+            //        .WithIdentity(addPeersJobKey)
+            //        .StoreDurably() // we need to store durably if no trigger is associated
+            //        .WithDescription("Add-Node-ToPeers-Job")
+            //        .Build();
+
+            //    await _scheduler.AddJob(jobDetail, true);
+            //}
+
+            //await _scheduler.TriggerJob(addPeersJobKey);
+
+            //**************************************************************************************************************************************************************
+
+            //var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+            //var nodesBicHashes = new List<byte[]>
+            //{
+            //    senderBicHash,
+            //    recipientBicHash,
+            //    currentNodeHashResponse.Data!
+            //};
+
+            //List<NodeInfo> nodes = [];
+            //foreach (var nodesBicHash in nodesBicHashes)
+            //{
+            //    var nodeResponse = await _dHtRedisService.GetNodeAsync("dht:nodes", nodesBicHash);
+            //    if (nodeResponse is { Successful: true, Data: not null })
+            //    {
+            //        NodeInfo node = new()
+            //        {
+            //            NodeBic = nodeResponse.Data.NodeBic,
+            //            NodeHash = nodeResponse.Data.NodeHash,
+            //            NodeEndPoint = nodeResponse.Data.NodeEndPoint,
+            //            NodeUri = nodeResponse.Data.NodeUri,
+            //            KnownPeers = [],
+            //            Accounts = [],
+
+            //        };
+
+            //        nodes.Add(node);
+            //    }
+            //}
+
+            //if (nodes.Any())
+            //{
+            //   await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
+            //}
+
         }
+
+        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+        if (accountResponse.Successful)
+            return accountResponse;
 
         var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
 
@@ -129,6 +206,22 @@ internal sealed class DhtService : IDhtService
         }
 
         await StoreAccountDataAsync(accountDataResponse.Data!);
+
+        //var storeAccountJobKey = new JobKey("StoreAccountDataJob");
+        //if (!await _scheduler.CheckExists(storeAccountJobKey))
+        //{
+        //    // Define the job only if it hasn't been added to Quartz
+        //    IJobDetail jobDetail = JobBuilder
+        //        .Create<StoreAccountDataJob>()
+        //        .WithIdentity(storeAccountJobKey)
+        //        .StoreDurably() // we need to store durably if no trigger is associated
+        //        .WithDescription("Add-Node-ToPeers-Job")
+        //        .Build();
+
+        //    await _scheduler.AddJob(jobDetail, true);
+        //}
+
+        //await _scheduler.TriggerJob(storeAccountJobKey);
 
         return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
     }
@@ -230,7 +323,7 @@ internal sealed class DhtService : IDhtService
         );
     }
 
-    public async Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo>? nodes, string centralNodeID, string senderBic, string recipinetBic)
+    public async Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo>? nodes, string centralNodeId, string senderBic, string recipinetBic)
     {
         try
         {
@@ -257,9 +350,9 @@ internal sealed class DhtService : IDhtService
                 //    senderNode.KnownPeers!.Add(centralNode);
                 //}
 
-                if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
+                if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    senderNode.KnownPeers.Add(senderNode!);
+                    senderNode.KnownPeers.Add(senderNode);
                 }
 
                 if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
@@ -271,27 +364,27 @@ internal sealed class DhtService : IDhtService
             if (senderNode != null)
             {
 
-                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
+                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    centralNode.KnownPeers.Add(senderNode!);
+                    centralNode.KnownPeers.Add(senderNode);
                 }
 
-                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
+                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    recipientNode.KnownPeers.Add(senderNode!);
+                    recipientNode.KnownPeers.Add(senderNode);
                 }
             }
 
             if (recipientNode != null)
             {
-                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode!.NodeBic)))
+                if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode.NodeBic)))
                 {
-                    centralNode.KnownPeers.Add(recipientNode!);
+                    centralNode.KnownPeers.Add(recipientNode);
                 }
 
                 if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode.NodeBic)))
                 {
-                    senderNode.KnownPeers.Add(recipientNode!);
+                    senderNode.KnownPeers.Add(recipientNode);
                 }
 
             }
@@ -327,7 +420,7 @@ internal sealed class DhtService : IDhtService
 
     private async Task<DhtResponse<bool>> AddNodeToDhtAsync(string bic, byte[] bicHash)
     {
-        var nodeEndpointResponse = await _nodeManagementService.GetNodeEndpointFromConfigAsync(bic);
+        var nodeEndpointResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(bic);
         if (!nodeEndpointResponse.Successful)
         {
             return DhtResponse<bool>.Failure(nodeEndpointResponse.Message!);

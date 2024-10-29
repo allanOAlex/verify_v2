@@ -1,4 +1,5 @@
-﻿using Verify.Application.Abstractions.DHT;
+﻿using Quartz;
+using Verify.Application.Abstractions.DHT;
 using Verify.Application.Abstractions.DHT.Jobs;
 using Verify.Application.Abstractions.IServices;
 
@@ -12,6 +13,7 @@ public interface IServiceManager
     IHashingService HashingService { get; }
     INodeManagementService NodeManagementService { get; }
     IDhtMaintenanceJob DhtMaintenanceJob { get; }
+    IAddNodeToPeersJob AddNodeToPeersJob { get; }
 
 
 }

@@ -6,7 +6,7 @@ using Verify.Application.Dtos.Common;
 namespace Verify.Application.Abstractions.DHT;
 public interface IDhtRedisService
 {
-    Task<ITransaction> CreateTransaction();
+    ITransaction CreateTransaction();
     Task<DhtResponse<bool>> NodeExistsAsync(string key, byte[] hash);
     Task<DhtResponse<bool>> SortedSetNodeExistsByScoreAsync(string key, string serializedValue);
     Task<DhtResponse<bool>> SortedSetNodeExistsByRankAsync(string key, byte[] hash);

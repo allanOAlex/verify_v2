@@ -1,4 +1,5 @@
-﻿using Verify.Application.Abstractions.DHT;
+﻿using Quartz;
+using Verify.Application.Abstractions.DHT;
 using Verify.Application.Abstractions.DHT.Jobs;
 using Verify.Application.Abstractions.Interfaces;
 using Verify.Application.Abstractions.IServices;
@@ -13,6 +14,7 @@ internal sealed class ServiceManager : IServiceManager
     public IHashingService HashingService { get; }
     public INodeManagementService NodeManagementService { get; }
     public IDhtMaintenanceJob DhtMaintenanceJob { get; }
+    public IAddNodeToPeersJob AddNodeToPeersJob { get; }
 
 
 
@@ -24,7 +26,9 @@ internal sealed class ServiceManager : IServiceManager
         IDhtRedisService dHtRedisService,
         IHashingService hashingService,
         INodeManagementService nodeManagementService,
-        IDhtMaintenanceJob dHtMaintenanceJob)
+        IDhtMaintenanceJob dHtMaintenanceJob,
+        IAddNodeToPeersJob addNodeToPeersJob
+        )
     {
         CacheService = cacheService;
         LogService = logService;
@@ -33,5 +37,6 @@ internal sealed class ServiceManager : IServiceManager
         HashingService = hashingService;
         NodeManagementService = nodeManagementService;
         DhtMaintenanceJob = dHtMaintenanceJob;
+        AddNodeToPeersJob = addNodeToPeersJob;
     }
 }

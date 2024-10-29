@@ -25,7 +25,7 @@ internal sealed class DhtRedisService : IDhtRedisService
     }
 
 
-    public async Task<ITransaction> CreateTransaction()
+    public ITransaction CreateTransaction()
     {
         return _redisDatabase.CreateTransaction();
     }
@@ -41,7 +41,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
             return exists
                 ? DhtResponse<bool>.Success(message, true)
-                : DhtResponse<bool>.Failure(message, false);
+                : DhtResponse<bool>.Failure(message);
         }
         catch (Exception ex)
         {
@@ -56,7 +56,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             var exists = await _redisDatabase.SortedSetScoreAsync(key, serializedValue);
             return exists.HasValue
                 ? DhtResponse<bool>.Success("Node exists", true)
-                : DhtResponse<bool>.Failure("Node does not exist", false);
+                : DhtResponse<bool>.Failure("Node does not exist");
         }
         catch (Exception ex)
         {
@@ -71,7 +71,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             var exists = await _redisDatabase.SortedSetRankAsync(key, JsonConvert.SerializeObject(hash));
             return exists.HasValue
                 ? DhtResponse<bool>.Success("Node exists", true)
-                : DhtResponse<bool>.Failure("Node does not exist", false);
+                : DhtResponse<bool>.Failure("Node does not exist");
         }
         catch (Exception ex)
         {
@@ -115,7 +115,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
             return nodes.Any()
                  ? DhtResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
-                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range", null);
+                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range");
         }
         catch (Exception ex)
         {
@@ -140,7 +140,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
             return nodes.Any()
                  ? DhtResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
-                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range", null);
+                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range");
         }
         catch (Exception ex)
         {
@@ -156,7 +156,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             string redisBucketsKey = $"dht:buckets:{distance}";
 
             // Retrieve nodes by ascending order of XOR distance
-            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue, Exclude.None, Order.Ascending);
+            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue);
 
             // Filter to include only those nodes with the same bicHash
             var filteredNodes = sortedNodes
@@ -164,7 +164,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 .Where(node => node!.NodeHash.SequenceEqual(bicHash))
                 .ToList();
 
-            if (filteredNodes == null || !filteredNodes.Any())
+            if (!filteredNodes.Any())
             {
                 return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
             }
@@ -182,9 +182,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 }
             });
 
-            return closestNode != null
-                ? DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode)
-                : DhtResponse<NodeInfo>.Failure("No closest node found in the DHT.", null);
+            return DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode);
         }
         catch (Exception ex)
         {
@@ -200,17 +198,17 @@ internal sealed class DhtRedisService : IDhtRedisService
             string redisBucketsKey = $"dht:buckets:{distance}";
 
             // Retrieve all nodes in the bucket
-            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue, Exclude.None, Order.Ascending);
+            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue);
             if (!sortedNodes.Any())
             {
                 return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
             }
 
             // Filter nodes with matching bicHash concurrently
-            var tasks = sortedNodes.Select(async nodeData =>
+            var tasks = sortedNodes.Select(nodeData =>
             {
                 var node = JsonConvert.DeserializeObject<NodeInfo>(nodeData!);
-                return node!.NodeHash.SequenceEqual(bicHash) ? node : null;
+                return Task.FromResult(node!.NodeHash.SequenceEqual(bicHash) ? node : null);
             });
 
             // Wait for all filtering tasks to complete
@@ -232,9 +230,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 }
             }
 
-            return closestNode != null
-                ? DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode)
-                : DhtResponse<NodeInfo>.Failure("No closest node found in the DHT.", null);
+            return DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode);
         }
         catch (Exception ex)
         {
@@ -286,9 +282,9 @@ internal sealed class DhtRedisService : IDhtRedisService
     public async Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash, int maxDepth = 3)
     {
         var closestNodeResponse = await GetSortedSetClosestNodeAsync(currentNodeHash, bicHash);
-        if (closestNodeResponse == null || closestNodeResponse.Data == null)
+        if (closestNodeResponse.Data == null)
         {
-            return DhtResponse<NodeInfo>.Failure(closestNodeResponse!.Message!);
+            return DhtResponse<NodeInfo>.Failure(closestNodeResponse.Message!);
         }
 
         return await FindNodeRecursivelyAsync(bicHash, new List<NodeInfo> { closestNodeResponse.Data }, new HashSet<string>(), currentNodeHash, maxDepth);
@@ -309,7 +305,7 @@ internal sealed class DhtRedisService : IDhtRedisService
         try
         {
             var allNodesResponse = await GetAllNodesAsync("dht:nodes");
-            if (allNodesResponse?.Data == null || !allNodesResponse.Data.Any())
+            if (allNodesResponse.Data == null || !allNodesResponse.Data.Any())
             {
                 return new List<NodeInfo>();
             }
@@ -327,16 +323,16 @@ internal sealed class DhtRedisService : IDhtRedisService
                 .ToList();
 
             // Retrieve each closest node's peer list from Redis
-            var peerListsTasks = closestNodes.Select(async node =>
+            var peerListsTasks = closestNodes.Select(node =>
             {
                 try
                 {
                     var peersResponse = node.KnownPeers;
-                    return peersResponse ?? new List<NodeInfo>();
+                    return Task.FromResult(peersResponse ?? new List<NodeInfo>());
                 }
                 catch
                 {
-                    return new List<NodeInfo>();
+                    return Task.FromResult(new List<NodeInfo>());
                 }
             });
 
@@ -350,7 +346,7 @@ internal sealed class DhtRedisService : IDhtRedisService
                 .Take(k) 
                 .ToList();
 
-            return allNodes!;
+            return allNodes;
         }
         catch (Exception ex)
         {
@@ -464,7 +460,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
             return added
                 ? DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", value } })
-                : DhtResponse<bool>.Success("Failed to Add Node to DHT", true, null, null);
+                : DhtResponse<bool>.Success("Failed to Add Node to DHT", true);
         }
         catch (RedisServerException ex) when (ex.Message.Contains("WRONGTYPE"))
         {
@@ -489,14 +485,14 @@ internal sealed class DhtRedisService : IDhtRedisService
 
         return await _redisDatabase.SortedSetAddAsync(bucketKey, value.AccountHash, score)
             ? DhtResponse<bool>.Success("Account added to DHT", true, null, new Dictionary<string, object>() { { "account", value } })
-            : DhtResponse<bool>.Success("Failed to Add Account to DHT", true, null, null);
+            : DhtResponse<bool>.Success("Failed to Add Account to DHT", true);
     }
 
     public async Task<DhtResponse<bool>> RemoveNodeAsync(string key, byte[] field)
     {
         return await _redisDatabase.HashDeleteAsync(key, field)
             ? DhtResponse<bool>.Success("Node removed successfully", true)
-            : DhtResponse<bool>.Failure("Node not found", false);
+            : DhtResponse<bool>.Failure("Node not found");
     }
 
     public async Task<DhtResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo)
@@ -531,7 +527,7 @@ internal sealed class DhtRedisService : IDhtRedisService
 
         return await transaction.ExecuteAsync()
             ? DhtResponse<bool>.Success("Update successful", true)
-            : DhtResponse<bool>.Failure("Update failed", false);
+            : DhtResponse<bool>.Failure("Update failed");
     }
 
     public async Task CleanUpInactiveNodesAsync(string redisNodesKey)
@@ -540,7 +536,7 @@ internal sealed class DhtRedisService : IDhtRedisService
         foreach (var nodeHash in dhtNodes)
         {
             var nodeInfoResponse = DeserializeNodeInfo(nodeHash.Value);
-            if (nodeInfoResponse != null && ShouldEvictNode(nodeInfoResponse))
+            if (ShouldEvictNode(nodeInfoResponse))
             {
                 await RemoveSortedSetNodeAsync(redisNodesKey, nodeInfoResponse);
             }
@@ -562,7 +558,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             {
                 return DhtResponse<byte[]>.Success("Least recently seen node retrieved", leastRecentlySeenNode[0]!);
             }
-            return DhtResponse<byte[]>.Failure("No nodes found in the bucket.", null);
+            return DhtResponse<byte[]>.Failure("No nodes found in the bucket.");
         }
         catch (Exception ex)
         {
@@ -573,11 +569,6 @@ internal sealed class DhtRedisService : IDhtRedisService
     private NodeInfo DeserializeNodeInfo(RedisValue serializedNodeInfo)
     {
         return JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!)!;
-    }
-
-    private AccountInfo DeserializeAccountInfo(RedisValue serializedAccountInfo)
-    {
-        return JsonConvert.DeserializeObject<AccountInfo>(serializedAccountInfo!)!;
     }
 
     private string SerializeNodeInfo(NodeInfo nodeInfo)
@@ -600,7 +591,7 @@ internal sealed class DhtRedisService : IDhtRedisService
     {
         if (depth <= 0 || nodes.Count == 0)
         {
-            return DhtResponse<NodeInfo>.Failure("Max depth reached or no nodes to check")!;
+            return DhtResponse<NodeInfo>.Failure("Max depth reached or no nodes to check");
         }
 
         foreach (var node in nodes)
@@ -616,7 +607,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             // Check if this node is the one we want
             if (node.NodeHash.SequenceEqual(bicHash))
             {
-                return DhtResponse<NodeInfo>.Success("Success", node)!;
+                return DhtResponse<NodeInfo>.Success("Success", node);
             }
 
             // Query known peers if the current node is not the responsible node
@@ -624,14 +615,11 @@ internal sealed class DhtRedisService : IDhtRedisService
             {
                 // Recursively search within the known peers of the current node
                 var peerNode = await FindNodeRecursivelyAsync(bicHash, node.KnownPeers, visited, currentNodeHash, depth - 1);
-                if (peerNode != null)
-                {
-                    return peerNode;
-                }
+                return peerNode;
             }
         }
 
-        return DhtResponse<NodeInfo>.Failure("Failied")!;
+        return DhtResponse<NodeInfo>.Failure("Failied");
     }
 
 

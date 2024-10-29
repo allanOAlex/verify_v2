@@ -23,7 +23,7 @@ var appSettings = configuration.GetSection("AppSettings").Get<AppSettings>();
 serviceCollection.AddHttpClient("DHT", client =>
 {
     client.BaseAddress = new Uri(appSettings!.ApiBaseUrl!);
-    client.Timeout = TimeSpan.FromSeconds(appSettings!.TimeoutSeconds);
+    client.Timeout = TimeSpan.FromSeconds(appSettings.TimeoutSeconds);
 
 });
 
