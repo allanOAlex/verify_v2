@@ -6,6 +6,7 @@ using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
+using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Infrastructure.Utilities.DHT;
 using Verify.Infrastructure.Utilities.DHT.ApiClients;
 
@@ -44,163 +45,264 @@ internal sealed class DhtService : IDhtService
     }
 
 
+    public async Task<DhtResponse<AccountInfo>> FetchAccountData_(AccountRequest accountRequest)
+    {
+        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+        if (accountResponse.Successful)
+            return accountResponse;
+
+        var queryUrlResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.RecipientBic);
+        var queryUrlResponseUri = new Uri(queryUrlResponse.Data!);
+        var queryUrl = $"{queryUrlResponseUri.Scheme}://{queryUrlResponseUri.Host}:{queryUrlResponseUri.Port}/";
+
+        var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
+        if (!accountDataResponse.Successful)
+        {
+            return DhtResponse<AccountInfo>.Failure("Failed to retrieve account details from the responsible node.");
+        }
+
+        var accountHashResponse = await _hashingService.ByteHash(accountDataResponse.Data!.AccountNumber!);
+        var accountHash = accountHashResponse.Data;
+        var jobDataMap = new JobDataMap
+        {
+            ["AccountHash"] = accountHash!,
+            ["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
+        };
+
+        var storeAccountJobKey = new JobKey("StoreAccountDataJob");
+        if (!await _scheduler.CheckExists(storeAccountJobKey))
+        {
+            IJobDetail jobDetail = JobBuilder
+                .Create<StoreAccountDataJob>()
+                .WithIdentity(storeAccountJobKey)
+                .StoreDurably() // we need to store durably if no trigger is associated
+                .WithDescription("Store-AccountData-Job")
+                .Build();
+
+            await _scheduler.AddJob(jobDetail, true);
+        }
+
+        await _scheduler.TriggerJob(storeAccountJobKey, jobDataMap);
+
+        return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
+    }
+
     public async Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest)
     {
         var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
         if (accountResponse.Successful)
             return accountResponse;
 
-        //var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
-        //var senderBicHash = senderBicHashResponse.Data ?? [];
+        var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
+        var senderBicHash = senderBicHashResponse.Data ?? [];
 
-        //var recipientBicHashResponse = await _hashingService.ByteHash(accountRequest.RecipientBic);
-        //var recipientBicHash = recipientBicHashResponse.Data ?? [];
+        var recipientBicHashResponse = await _hashingService.ByteHash(accountRequest.RecipientBic);
+        var recipientBicHash = recipientBicHashResponse.Data ?? [];
 
-        //// Parallel checks for existence
-        //var senderExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
-        //var recipientExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
+        // Parallel checks for existence
+        var senderExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
+        var recipientExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
 
-        //var senderExists = await senderExistsTask;
-        //var recipientExists = await recipientExistsTask;
+        var senderExists = await senderExistsTask;
+        var recipientExists = await recipientExistsTask;
 
-        //// Collect tasks for adding nodes if they don't exist
-        //var addNodeTasks = new List<Task<DhtResponse<bool>>>();
+        // Collect tasks for adding nodes if they don't exist
+        var addNodeTasks = new List<Task<DhtResponse<bool>>>();
 
-        //if (senderExists.Data && recipientExists.Data)
-        //{
-        //    var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
-        //    var nodesBicHashes = new List<byte[]>
-        //    {
-        //        senderBicHash,
-        //        recipientBicHash,
-        //        currentNodeHashResponse.Data!
-        //    };
+        if (!senderExists.Data)
+        {
+            var addInitiatorTask = AddNodeToDhtAsync(accountRequest.SenderBic, senderBicHash);
+            addNodeTasks.Add(addInitiatorTask);
+        }
 
-        //    var jobDataMap = new JobDataMap
-        //    {
-        //        ["NodesBicHashes"] = nodesBicHashes, 
-        //        ["SenderBic"] = accountRequest.SenderBic, 
-        //        ["RecipientBic"] = accountRequest.RecipientBic 
-        //    };
+        if (!recipientExists.Data)
+        {
+            var addRecipientTask = AddNodeToDhtAsync(accountRequest.RecipientBic, recipientBicHash);
+            addNodeTasks.Add(addRecipientTask);
+        }
 
-        //    var addPeersJobKey = new JobKey("AddNodeToPeersJob");
-        //    if (!await _scheduler.CheckExists(addPeersJobKey))
-        //    {
-        //        // Define the job only if it hasn't been added to Quartz
-        //        IJobDetail jobDetail = JobBuilder
-        //            .Create<AddNodeToPeersJob>()
-        //            .WithIdentity(addPeersJobKey)
-        //            .StoreDurably() // we need to store durably if no trigger is associated
-        //            .WithDescription("Add-Node-ToPeers-Job")
-        //            .Build();
+        if (addNodeTasks.Count > 0)
+        {
+            var addNodeResponses = await Task.WhenAll(addNodeTasks);
+            if (addNodeResponses.Any(response => !response.Successful))
+            {
+                return DhtResponse<AccountInfo>.Failure($"Failed to add one or more nodes to the DHT:");
+            }
 
-        //        await _scheduler.AddJob(jobDetail, true);
-        //    }
+            var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+            var nodesBicHashes = new List<byte[]>
+                {
+                    senderBicHash,
+                    recipientBicHash,
+                    currentNodeHashResponse.Data!
+                };
 
-        //    await _scheduler.TriggerJob(addPeersJobKey, jobDataMap);
-        //}
+            var addPeersbDataMap = new JobDataMap
+            {
+                ["NodesBicHashes"] = nodesBicHashes,
+                ["SenderBic"] = accountRequest.SenderBic,
+                ["RecipientBic"] = accountRequest.RecipientBic
+            };
 
-        //if (!senderExists.Data)
-        //{
-        //    var addInitiatorTask = AddNodeToDhtAsync(accountRequest.SenderBic, senderBicHash);
-        //    addNodeTasks.Add(addInitiatorTask);
-        //}
+            var addPeersJobKey = new JobKey("AddNodeToPeersJob");
+            if (!await _scheduler.CheckExists(addPeersJobKey))
+            {
+                // Define the job only if it hasn't been added to Quartz
+                IJobDetail jobDetail = JobBuilder
+                    .Create<AddNodeToPeersJob>()
+                    .WithIdentity(addPeersJobKey)
+                    .StoreDurably() // we need to store durably if no trigger is associated
+                    .WithDescription("Add-Node-ToPeers-Job")
+                    .Build();
 
-        //if (!recipientExists.Data)
-        //{
-        //    var addRecipientTask = AddNodeToDhtAsync(accountRequest.RecipientBic, recipientBicHash);
-        //    addNodeTasks.Add(addRecipientTask);
-        //}
+                await _scheduler.AddJob(jobDetail, true);
+            }
 
-        //// Run all add tasks in parallel if there are nodes to add
-        //if (addNodeTasks.Count > 0)
-        //{
-        //    var addNodeResponses = await Task.WhenAll(addNodeTasks);
-        //    if (addNodeResponses.Any(response => !response.Successful))
-        //    {
-        //        return DhtResponse<AccountInfo>.Failure("Failed to add one or more nodes to the DHT.");
-        //    }
+            await _scheduler.TriggerJob(addPeersJobKey, addPeersbDataMap);
 
+        }
 
+        var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
 
+        var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, recipientBicHash);
+        if (!responsibleNodeResponse.Successful)
+        {
+            return DhtResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
+        }
 
-            //**************************************************************************************************************************************************************
+        var responsibleNode = responsibleNodeResponse.Data;
+        if (string.IsNullOrEmpty(responsibleNode!.NodeUri.Scheme) || string.IsNullOrEmpty(responsibleNode.NodeUri.Host) || responsibleNode.NodeUri.Port <= 0)
+        {
+            return DhtResponse<AccountInfo>.Failure("Invalid node URI components. Cannot construct query URL.");
+        }
 
-            //var addPeersJobKey = new JobKey("AddNodeToPeersJob");
-            //if (!await _scheduler.CheckExists(addPeersJobKey))
-            //{
-            //    // Define the job only if it hasn't been added to Quartz
-            //    IJobDetail jobDetail = JobBuilder
-            //        .Create<AddNodeToPeersJob>()
-            //        .WithIdentity(addPeersJobKey)
-            //        .StoreDurably() // we need to store durably if no trigger is associated
-            //        .WithDescription("Add-Node-ToPeers-Job")
-            //        .Build();
+        var queryUrl = $"{responsibleNode.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
 
-            //    await _scheduler.AddJob(jobDetail, true);
-            //}
+        var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
+        if (!accountDataResponse.Successful)
+        {
+            return DhtResponse<AccountInfo>.Failure("Failed to retrieve account details from the responsible node.");
+        }
 
-            //await _scheduler.TriggerJob(addPeersJobKey);
+        // Store account data
 
-            //**************************************************************************************************************************************************************
+        var accountHashResponse = await _hashingService.ByteHash(accountDataResponse.Data!.AccountNumber!);
+        var accountHash = accountHashResponse.Data;
+        var jobDataMap = new JobDataMap
+        {
+            ["AccountHash"] = accountHash!,
+            ["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
+        };
 
-            //var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
-            //var nodesBicHashes = new List<byte[]>
-            //{
-            //    senderBicHash,
-            //    recipientBicHash,
-            //    currentNodeHashResponse.Data!
-            //};
+        var storeAccountJobKey = new JobKey("StoreAccountDataJob");
+        if (!await _scheduler.CheckExists(storeAccountJobKey))
+        {
+            IJobDetail jobDetail = JobBuilder
+                .Create<StoreAccountDataJob>()
+                .WithIdentity(storeAccountJobKey)
+                .StoreDurably() // we need to store durably if no trigger is associated
+                .WithDescription("Store-AccountData-Job")
+                .Build();
 
-            //List<NodeInfo> nodes = [];
-            //foreach (var nodesBicHash in nodesBicHashes)
-            //{
-            //    var nodeResponse = await _dHtRedisService.GetNodeAsync("dht:nodes", nodesBicHash);
-            //    if (nodeResponse is { Successful: true, Data: not null })
-            //    {
-            //        NodeInfo node = new()
-            //        {
-            //            NodeBic = nodeResponse.Data.NodeBic,
-            //            NodeHash = nodeResponse.Data.NodeHash,
-            //            NodeEndPoint = nodeResponse.Data.NodeEndPoint,
-            //            NodeUri = nodeResponse.Data.NodeUri,
-            //            KnownPeers = [],
-            //            Accounts = [],
+            await _scheduler.AddJob(jobDetail, true);
+        }
 
-            //        };
+        await _scheduler.TriggerJob(storeAccountJobKey, jobDataMap);
 
-            //        nodes.Add(node);
-            //    }
-            //}
+        return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
+    }
 
-            //if (nodes.Any())
-            //{
-            //   await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
-            //}
+    public async Task<DhtResponse<AccountInfo>> _FetchAccountData(AccountRequest accountRequest)
+    {
+        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+        if (accountResponse.Successful)
+            return accountResponse;
 
-        //}
+        var senderBicHashResponse = await _hashingService.ByteHash(accountRequest.SenderBic);
+        var senderBicHash = senderBicHashResponse.Data ?? [];
 
-        
+        var recipientBicHashResponse = await _hashingService.ByteHash(accountRequest.RecipientBic);
+        var recipientBicHash = recipientBicHashResponse.Data ?? [];
 
-        //var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+        // Parallel checks for existence
+        var senderExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", senderBicHash);
+        var recipientExistsTask = _dHtRedisService.NodeExistsAsync("dht:nodes", recipientBicHash);
 
-        //var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, recipientBicHash);
-        //if (!responsibleNodeResponse.Successful)
-        //{
-        //    return DhtResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
-        //}
+        var senderExists = await senderExistsTask;
+        var recipientExists = await recipientExistsTask;
 
-        //var responsibleNode = responsibleNodeResponse.Data;
-        //if (string.IsNullOrEmpty(responsibleNode!.NodeUri.Scheme) || string.IsNullOrEmpty(responsibleNode.NodeUri.Host) || responsibleNode.NodeUri.Port <= 0)
-        //{
-        //    return DhtResponse<AccountInfo>.Failure("Invalid node URI components. Cannot construct query URL.");
-        //}
+        // Collect tasks for adding nodes if they don't exist
+        var addNodeTasks = new List<Task<DhtResponse<bool>>>();
 
-        var queryUrlResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.RecipientBic);
-        var queryUrlResponseUri = new Uri(queryUrlResponse.Data!);
-        var queryUrl = $"{queryUrlResponseUri.Scheme}://{queryUrlResponseUri.Host}:{queryUrlResponseUri.Port}/";
-        //var queryUrl = $"{responsibleNode.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
+        if (!senderExists.Data)
+        {
+            var addInitiatorTask = AddNodeToDhtAsync(accountRequest.SenderBic, senderBicHash);
+            addNodeTasks.Add(addInitiatorTask);
+        }
 
+        if (!recipientExists.Data)
+        {
+            var addRecipientTask = AddNodeToDhtAsync(accountRequest.RecipientBic, recipientBicHash);
+            addNodeTasks.Add(addRecipientTask);
+        }
+
+        if (addNodeTasks.Count > 0)
+        {
+            var addNodeResponses = await Task.WhenAll(addNodeTasks);
+            if (addNodeResponses.Any(response => !response.Successful))
+            {
+                return DhtResponse<AccountInfo>.Failure($"Failed to add one or more nodes to the DHT:");
+            }
+
+            var currentNodeHashResponse = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+            var nodesBicHashes = new List<byte[]>
+            {
+                senderBicHash,
+                recipientBicHash,
+                currentNodeHashResponse.Data!
+            };
+
+            List<NodeInfo> nodes = [];
+            foreach (var nodesBicHash in nodesBicHashes)
+            {
+                var nodeResponse = await _dHtRedisService.GetNodeAsync("dht:nodes", nodesBicHash);
+                if (nodeResponse is { Successful: true, Data: not null })
+                {
+                    NodeInfo node = new()
+                    {
+                        NodeBic = nodeResponse.Data.NodeBic,
+                        NodeHash = nodeResponse.Data.NodeHash,
+                        NodeEndPoint = nodeResponse.Data.NodeEndPoint,
+                        NodeUri = nodeResponse.Data.NodeUri,
+                        KnownPeers = [],
+                        Accounts = [],
+
+                    };
+
+                    nodes.Add(node);
+                }
+            }
+
+            if (nodes.Any())
+            {
+                await AddNodeToPeers(nodes, _configuration["NodeConfig:CurrentNode"]!, accountRequest.SenderBic, accountRequest.RecipientBic);
+            }
+        }
+
+        var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+        var responsibleNodeResponse = await FindClosestResponsibleNodeAsync(currentNodeHash.Data!, recipientBicHash);
+        if (!responsibleNodeResponse.Successful)
+        {
+            return DhtResponse<AccountInfo>.Failure(responsibleNodeResponse.Message!);
+        }
+
+        var responsibleNode = responsibleNodeResponse.Data;
+        if (string.IsNullOrEmpty(responsibleNode!.NodeUri.Scheme) || string.IsNullOrEmpty(responsibleNode.NodeUri.Host) || responsibleNode.NodeUri.Port <= 0)
+        {
+            return DhtResponse<AccountInfo>.Failure("Invalid node URI components. Cannot construct query URL.");
+        }
+
+        var queryUrl = $"{responsibleNode.NodeUri.Scheme}://{responsibleNode.NodeUri.Host}:{responsibleNode.NodeUri.Port}/";
 
         var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
         if (!accountDataResponse.Successful)
@@ -209,22 +311,6 @@ internal sealed class DhtService : IDhtService
         }
 
         await StoreAccountDataAsync(accountDataResponse.Data!);
-
-        //var storeAccountJobKey = new JobKey("StoreAccountDataJob");
-        //if (!await _scheduler.CheckExists(storeAccountJobKey))
-        //{
-        //    // Define the job only if it hasn't been added to Quartz
-        //    IJobDetail jobDetail = JobBuilder
-        //        .Create<StoreAccountDataJob>()
-        //        .WithIdentity(storeAccountJobKey)
-        //        .StoreDurably() // we need to store durably if no trigger is associated
-        //        .WithDescription("Add-Node-ToPeers-Job")
-        //        .Build();
-
-        //    await _scheduler.AddJob(jobDetail, true);
-        //}
-
-        //await _scheduler.TriggerJob(storeAccountJobKey);
 
         return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
     }
@@ -312,28 +398,8 @@ internal sealed class DhtService : IDhtService
 
     public async Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo)
     {
-        //var accountHashResponse = await _hashingService.ByteHash(accountInfo.AccountNumber!);
-        //await _dHtRedisService.SetNodeAsync("dht:accounts", accountHashResponse.Data!, JsonSerializer.Serialize(accountInfo), TimeSpan.FromHours(24));
-        //return DhtResponse<AccountInfo>.Success(
-        //    "Account data stored successfully.",
-        //    new AccountInfo
-        //    {
-        //        AccountHash = accountInfo.AccountHash,
-        //        AccountBic = accountInfo.AccountBic,
-        //        AccountNumber = accountInfo.AccountNumber,
-        //        AccountName = accountInfo.AccountName
-        //    }
-        //);
-
-        // Hash the account number and prepare the serialized data concurrently
-        var accountHashTask = _hashingService.ByteHash(accountInfo.AccountNumber!);
-        var serializedAccountInfo = JsonSerializer.Serialize(accountInfo);
-
-        await Task.WhenAll(accountHashTask);
-
-        var accountHashResponse = await accountHashTask;
-        await _dHtRedisService.SetNodeAsync("dht:accounts", accountHashResponse.Data!, serializedAccountInfo, TimeSpan.FromHours(24));
-
+        var accountHashResponse = await _hashingService.ByteHash(accountInfo.AccountNumber!);
+        await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHashResponse.Data!, JsonSerializer.Serialize(accountInfo), TimeSpan.FromHours(24));
         return DhtResponse<AccountInfo>.Success(
             "Account data stored successfully.",
             new AccountInfo
@@ -344,6 +410,7 @@ internal sealed class DhtService : IDhtService
                 AccountName = accountInfo.AccountName
             }
         );
+
     }
 
     public async Task<DhtResponse<bool>> AddNodeToPeers(List<NodeInfo>? nodes, string centralNodeId, string senderBic, string recipinetBic)
@@ -364,68 +431,87 @@ internal sealed class DhtService : IDhtService
                 return DhtResponse<bool>.Failure("No peers found to add.");
             }
 
+            PeerNode peerNode;
             if (centralNode != null)
             {
-
-                // Add the Central Node to Sender's peers if it doesn't already exist
-                //if (senderNode != null && !senderNode.KnownPeers!.Any(peer => peer.NodeBic.SequenceEqual(centralNode.NodeBic)))
-                //{
-                //    senderNode.KnownPeers!.Add(centralNode);
-                //}
+                peerNode = new()
+                {
+                    NodeBic = centralNode.NodeBic,
+                    NodeHash = centralNode.NodeHash,
+                    NodeEndPoint = centralNode.NodeEndPoint,
+                    NodeUri = centralNode.NodeUri,
+                    LastSeen = centralNode.LastSeen,
+                };
 
                 if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    senderNode.KnownPeers.Add(senderNode);
+                    senderNode.KnownPeers.Add(peerNode);
                 }
 
-                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode!.NodeBic)))
+                if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(centralNode!.NodeBic)))
                 {
-                    recipientNode.KnownPeers.Add(senderNode!);
+                    recipientNode.KnownPeers.Add(peerNode!);
                 }
             }
 
             if (senderNode != null)
             {
+                peerNode = new()
+                {
+                    NodeBic = senderNode.NodeBic,
+                    NodeHash = senderNode.NodeHash,
+                    NodeEndPoint = senderNode.NodeEndPoint,
+                    NodeUri = senderNode.NodeUri,
+                    LastSeen = senderNode.LastSeen,
+                };
 
                 if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    centralNode.KnownPeers.Add(senderNode);
+                    centralNode.KnownPeers.Add(peerNode);
                 }
 
                 if (recipientNode != null && recipientNode.KnownPeers != null && !recipientNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(senderNode.NodeBic)))
                 {
-                    recipientNode.KnownPeers.Add(senderNode);
+                    recipientNode.KnownPeers.Add(peerNode);
                 }
             }
 
             if (recipientNode != null)
             {
+                peerNode = new()
+                {
+                    NodeBic = recipientNode.NodeBic,
+                    NodeHash = recipientNode.NodeHash,
+                    NodeEndPoint = recipientNode.NodeEndPoint,
+                    NodeUri = recipientNode.NodeUri,
+                    LastSeen = recipientNode.LastSeen,
+                };
+
                 if (centralNode != null && centralNode.KnownPeers != null && !centralNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode.NodeBic)))
                 {
-                    centralNode.KnownPeers.Add(recipientNode);
+                    centralNode.KnownPeers.Add(peerNode);
                 }
 
                 if (senderNode != null && senderNode.KnownPeers != null && !senderNode.KnownPeers.Any(peer => peer.NodeBic.SequenceEqual(recipientNode.NodeBic)))
                 {
-                    senderNode.KnownPeers.Add(recipientNode);
+                    senderNode.KnownPeers.Add(peerNode);
                 }
-
             }
 
-            // Persist changes back to the DHT
+            //Persist the data
+            if (recipientNode != null)
+            {
+                await _nodeManagementService.AddOrUpdateNodeAsync(recipientNode!, false);
+            }
+
             if (centralNode != null)
             {
-                await _nodeManagementService.AddOrUpdateNodeAsync(centralNode, false);
+                await _nodeManagementService.AddOrUpdateNodeAsync(centralNode!, false);
             }
 
             if (senderNode != null)
             {
-                await _nodeManagementService.AddOrUpdateNodeAsync(senderNode, false);
-            }
-
-            if (recipientNode != null)
-            {
-                await _nodeManagementService.AddOrUpdateNodeAsync(recipientNode, false);
+                await _nodeManagementService.AddOrUpdateNodeAsync(senderNode!, false);
             }
 
             return DhtResponse<bool>.Success("Successfully added nodes to peers", true);

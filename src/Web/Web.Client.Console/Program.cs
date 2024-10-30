@@ -55,7 +55,7 @@ AccountRequest accountRequest2 = new() // To Bank 2
 
 Stopwatch stopwatch = Stopwatch.StartNew();
 var apiEndPoint = config["AppSettings:EndPoints:DHT:FetchAccountInfo"];
-var verifyResponse = await Methods.FetchAccountData(apiClient, accountRequest2, apiEndPoint!);
+var verifyResponse = await Methods.FetchAccountData(apiClient, accountRequest1, apiEndPoint!);
 stopwatch.Stop();
 
 Console.WriteLine($"Account Holder: {verifyResponse.AccountName}");

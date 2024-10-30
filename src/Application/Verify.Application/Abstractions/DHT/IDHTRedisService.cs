@@ -15,6 +15,7 @@ public interface IDhtRedisService
     Task<DhtResponse<List<NodeInfo>>> GetNodesByRankRangeAsync(string key, long minRank, long maxRank); // Retrieve nodes based on rank (index-based position in the set)
     Task<DhtResponse<List<NodeInfo>>> GetActiveNodesInBucketAsync(int distance);
     Task<DhtResponse<long>> GetBucketCountAsync(string bucketKey);
+    Task<DhtResponse<long>> GetBucketCountUsingLengthAsync(string bucketKey);
     Task<DhtResponse<long>> GetBucketLengthAsync(string bucketKey);
     Task<DhtResponse<NodeInfo>> GetLeastRecentlySeenNodeAsync(string bucketKey, string nodeKey);
     Task<DhtResponse<AccountInfo>> GetAccountNodeAsync(string key, byte[] field);

@@ -1,6 +1,8 @@
 ﻿using Refit;
 
 namespace Verify.Infrastructure.Utilities.DHT.ApiClients;
+
+
 internal sealed class ApiClientFactory : IApiClientFactory
 {
     private readonly RefitSettings _refitSettings;

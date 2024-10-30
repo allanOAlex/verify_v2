@@ -28,7 +28,7 @@ internal sealed class NodeManagementService : INodeManagementService
         IConfiguration configuration,
         IApiClientFactory apiClientFactory)
     {
-        _httpClient = httpClientFactory.CreateClient("Node");
+        _httpClient = httpClientFactory.CreateClient("DHT");
 
         _hashingService = hashingService;
         _dhtRedisService = dhtRedisService;
@@ -65,23 +65,27 @@ internal sealed class NodeManagementService : INodeManagementService
     public async Task<DhtResponse<bool>> AddOrUpdateNodeAsync(NodeInfo nodeInfo, bool withEviction = true)
     {
         var isCentralNode = nodeInfo.NodeBic == _configuration["NodeConfig:CurrentNode"];
-
-        // ToDo: BUG! BUG! BUG! - NodeInfo (Current Node) is the node we are trying to add; we eed to have a current node to compare the distance
         var currentNodeHash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
         int distance = DhtUtilities.CalculateXorDistance(currentNodeHash.Data!, nodeInfo.NodeHash);
 
         string redisBucketsKey = $"dht:buckets:{distance}";
         string redisNodesKey = $"dht:nodes";
+        
 
-        var existingNodeResponse = await _dhtRedisService.GetNodeAsync(redisNodesKey, nodeInfo.NodeHash);
+        //var existingNodeResponse = await _dhtRedisService.GetNodeAsync(redisNodesKey, nodeInfo.NodeHash);
+        var existingNodeResponse = await _dhtRedisService.GetNodeAsync(string.Concat(redisNodesKey,$":{nodeInfo.NodeHash}"), nodeInfo.NodeHash);
         if (existingNodeResponse.Data != null)
         {
             var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
             var serializedNode = JsonSerializer.Serialize(updatedNode);
-            await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, serializedNode, TimeSpan.FromHours(24), isCentralNode);
-            await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
 
-            return DhtResponse<bool>.Success("Node updated successfully", true, null, new Dictionary<string, object>() { { "node", updatedNode } });
+            await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+
+            var setResponse = await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
+            return setResponse.Successful
+                ? DhtResponse<bool>.Success("Node added/updated successfully", true, null, new Dictionary<string, object>() { { "node", nodeInfo } })
+                : DhtResponse<bool>.Failure("Node addition/update failed");
+
         }
         else
         {
@@ -140,7 +144,7 @@ internal sealed class NodeManagementService : INodeManagementService
     private async Task<DhtResponse<bool>> HandleNodeAdditionWithEvictionAsync(string redisBucketsKey, string redisNodesKey, NodeInfo nodeInfo, int distance, bool isCentralNode, bool withEviction)
     {
         // Check bucket size for the XOR distance bucket
-        var bucketCount = await _dhtRedisService.GetBucketCountAsync(redisBucketsKey);
+        var bucketCount = await _dhtRedisService.GetBucketCountUsingLengthAsync(redisBucketsKey);
         if (bucketCount.Data < BucketSize)
         {
             var serializedNode = JsonSerializer.Serialize(nodeInfo);
@@ -169,14 +173,15 @@ internal sealed class NodeManagementService : INodeManagementService
                 var serializedNode = JsonSerializer.Serialize(newNode);
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
                 await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
-                await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+                await _dhtRedisService.SetNodeAsync(redisNodesKey, newNode.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
                 return DhtResponse<bool>.Success("Replaced least recently seen node", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
 
             // If reachable, check if we should replace the least recently seen node based on LRS/LRU
             if (ShouldReplaceNode(leastRecentlySeenNode.Data!, newNode, isCentralNode))
             {
-                var serializedNodeToAdd = JsonSerializer.Serialize(newNode);
+                //var serializedNodeToAdd = JsonSerializer.Serialize(newNode);
+                string serializedNodeToAdd = $"{newNode.NodeHash}:{JsonSerializer.Serialize(newNode)}";
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
                 await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNodeToAdd, distance);
                 return DhtResponse<bool>.Success("Replaced least recently seen node based on LRS policy", true, null, new Dictionary<string, object>() { { "node", newNode } });
@@ -188,8 +193,9 @@ internal sealed class NodeManagementService : INodeManagementService
         }
 
         var serializedNewNode = JsonSerializer.Serialize(newNode);
+        //string serializedNewNode = $"{newNode.NodeHash}:{JsonSerializer.Serialize(newNode)}";
         await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNewNode, distance);
-        await _dhtRedisService.SetNodeAsync(redisBucketsKey, newNode.NodeHash, serializedNewNode, TimeSpan.FromHours(24), isCentralNode);
+        await _dhtRedisService.SetNodeAsync(redisNodesKey, newNode.NodeHash, serializedNewNode, TimeSpan.FromHours(24), isCentralNode);
         return DhtResponse<bool>.Success("No node to replace: - added new node successfully", true, null, new Dictionary<string, object>() { { "node", newNode } });
 
     }

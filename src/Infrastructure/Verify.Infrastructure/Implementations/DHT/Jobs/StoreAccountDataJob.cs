@@ -1,4 +1,7 @@
-﻿using Quartz;
+﻿using Polly;
+using Quartz;
+using Quartz.Util;
+using StackExchange.Redis;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Abstractions.DHT.Jobs;
 
@@ -19,8 +22,30 @@ internal sealed class StoreAccountDataJob : IStoreAccountDataJob
         _hashingService = hashingService;
     }
 
-    public Task Execute(IJobExecutionContext context)
+    public async Task Execute(IJobExecutionContext context)
     {
-        throw new NotImplementedException();
+        try
+        {
+            var accountHash = context.MergedJobDataMap["AccountHash"] as byte[] ?? [];
+            var serializedAccountInfo = context.MergedJobDataMap["SerializedAccountInfo"] as string ?? string.Empty;
+
+            if (accountHash != null && !serializedAccountInfo.IsNullOrWhiteSpace())
+            {
+                // Retry policy in case of transient Redis failures
+                await Policy
+                    .Handle<RedisException>()
+                    .RetryAsync(3)
+                    .ExecuteAsync(async () =>
+                        await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHash, serializedAccountInfo, TimeSpan.FromHours(24)));
+
+                await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHash, serializedAccountInfo!, TimeSpan.FromHours(24));
+            }
+        }
+        catch (Exception)
+        {
+
+            throw;
+        }
+        
     }
 }

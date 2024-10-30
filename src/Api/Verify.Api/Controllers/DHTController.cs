@@ -30,7 +30,9 @@ public class DhtController : ControllerBase
             throw new ValidationException("Request Object is Invalid", errors: validator.Validate(fetchAccountRequest).Errors);
         }
 
-        var serviceResponse = await _serviceManager.DhtService.FetchAccountData(fetchAccountRequest);
+        var serviceResponse = await _serviceManager.DhtService.FetchAccountData_(fetchAccountRequest);
+        //var serviceResponse = await _serviceManager.DhtService.FetchAccountData(fetchAccountRequest);
+        //var serviceResponse = await _serviceManager.DhtService._FetchAccountData(fetchAccountRequest);
         if (!serviceResponse.Successful)
         {
             if (serviceResponse.Exception is NoContentException || serviceResponse.Data == null)

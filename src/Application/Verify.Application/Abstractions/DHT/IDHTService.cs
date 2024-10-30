@@ -12,7 +12,9 @@ public interface IDhtService
     Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo);
     Task<DhtResponse<AccountInfo>> LookupAccountInMemoryAsync(AccountRequest accountRequest);
     Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash);
+    Task<DhtResponse<AccountInfo>> FetchAccountData_(AccountRequest accountRequest);
     Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest);
+    Task<DhtResponse<AccountInfo>> _FetchAccountData(AccountRequest accountRequest);
     Task<DhtResponse<AccountInfo>> QueryBankAsync(string queryUrl, AccountRequest accountRequest);
 
 }

@@ -18,7 +18,7 @@ builder.Services.AddCors(options =>
 builder.Services.AddHttpClient("DHT", client =>
 {
     client.BaseAddress = new Uri("https://localhost:7260/");
-    client.Timeout = TimeSpan.FromSeconds(500);
+    client.Timeout = TimeSpan.FromSeconds(1000);
 
 });
 

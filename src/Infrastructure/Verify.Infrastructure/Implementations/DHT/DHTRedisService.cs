@@ -155,7 +155,7 @@ internal sealed class DhtRedisService : IDhtRedisService
             int distance = DhtUtilities.CalculateXorDistance(currentNodeHash, bicHash); 
             string redisBucketsKey = $"dht:buckets:{distance}";
 
-            // Retrieve nodes by ascending order of XOR distance
+            // Retrieve nodes by ascending order of XOR distance 
             var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue);
 
             // Filter to include only those nodes with the same bicHash
@@ -172,15 +172,17 @@ internal sealed class DhtRedisService : IDhtRedisService
             NodeInfo closestNode = null!;
             long closestDistance = long.MaxValue;
 
-            Parallel.ForEach(filteredNodes, node =>
+            var distanceTasks = filteredNodes.Select(async node =>
             {
                 var currentDistance = DhtUtilities.CalculateXorDistance(bicHash, node!.NodeHash);
-                if (currentDistance < Interlocked.CompareExchange(ref closestDistance, currentDistance, closestDistance)) // Interlocked to safely update the closest node
+                if (currentDistance < closestDistance)
                 {
-                    NodeInfo currentClosestNode = node; // Store the closest node in a thread-safe manner
-                    Interlocked.Exchange(ref closestNode, currentClosestNode); // This might cause issues because `closestNode` is not thread-safe.( We can use Interlocked to manage this safely)
+                    Interlocked.Exchange(ref closestNode, node);
+                    Interlocked.Exchange(ref closestDistance, currentDistance);
                 }
             });
+
+            await Task.WhenAll(distanceTasks);
 
             return DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode);
         }
@@ -328,23 +330,30 @@ internal sealed class DhtRedisService : IDhtRedisService
                 try
                 {
                     var peersResponse = node.KnownPeers;
-                    return Task.FromResult(peersResponse ?? new List<NodeInfo>());
+                    return Task.FromResult(peersResponse ?? new List<PeerNode>());
                 }
                 catch
                 {
-                    return Task.FromResult(new List<NodeInfo>());
+                    throw;
                 }
             });
 
             var peerLists = await Task.WhenAll(peerListsTasks);
 
-            // Flatten the peer lists and deduplicate nodes by their hash
-            var allNodes = peerLists.SelectMany(peers => peers)
-                .Concat(closestNodes) // Include the initial closest nodes as well
-                .DistinctBy(node => BitConverter.ToString(node.NodeHash)) // Remove duplicates by node hash
-                .OrderBy(node => DhtUtilities.CalculateXorDistance(nodeHash, node.NodeHash)) // Sort by XOR distance
-                .Take(k) 
-                .ToList();
+            // Convert PeerNode to NodeInfo and flatten the lists
+            var allNodes = peerLists.SelectMany(peers => peers.Select(peer => new NodeInfo 
+                                    { 
+                                        NodeBic = peer.NodeBic,
+                                        NodeHash = peer.NodeHash,
+                                        NodeEndPoint = peer.NodeEndPoint,
+                                        NodeUri = peer.NodeUri,
+                                        LastSeen = peer.LastSeen
+                                    }))
+                                     .Concat(closestNodes) // Include the initial closest nodes as well
+                                     .DistinctBy(node => BitConverter.ToString(node.NodeHash)) // Remove duplicates by node hash
+                                     .OrderBy(node => DhtUtilities.CalculateXorDistance(nodeHash, node.NodeHash)) // Sort by XOR distance
+                                     .Take(k)
+                                     .ToList();
 
             return allNodes;
         }
@@ -404,14 +413,20 @@ internal sealed class DhtRedisService : IDhtRedisService
         return DhtResponse<List<NodeInfo>>.Success("Success", nodes);
     }
 
-    public async Task<DhtResponse<long>> GetBucketCountAsync(string bucketKey)
+    public async Task<DhtResponse<long>> GetBucketCountAsync(string bucketKey) 
     {
         // Retrieve the count from the counter key
         string countKey = $"{bucketKey}:count";
         long count = (long)await _redisDatabase.StringGetAsync(countKey);
         return DhtResponse<long>.Success("Bucket count retrieved successfully", count);
     }
-    
+
+    public async Task<DhtResponse<long>> GetBucketCountUsingLengthAsync(string bucketKey)
+    {
+        long count = await _redisDatabase.SortedSetLengthAsync(bucketKey);
+        return DhtResponse<long>.Success("Bucket count retrieved successfully", count);
+    }
+
     public async Task<DhtResponse<long>> GetBucketLengthAsync(string bucketKey)
     {
         long count = await _redisDatabase.ListLengthAsync(bucketKey);
@@ -438,27 +453,10 @@ internal sealed class DhtRedisService : IDhtRedisService
 
     public async Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
     {
-        //await _redisDatabase.HashSetAsync(key, field, serializedValue);
-        //if (expiry.HasValue && !isCentralNode)
-        //{
-        //    await _redisDatabase.KeyExpireAsync(key, expiry);
-        //}
-
-        var batch = _redisDatabase.CreateBatch();
-
-        // Add the HashSet operation to the batch
-        var hashSetTask = batch.HashSetAsync(key, field, serializedValue);
-
-        Task? expiryTask = null;
+        await _redisDatabase.HashSetAsync(key, field, serializedValue);
         if (expiry.HasValue && !isCentralNode)
         {
-            expiryTask = batch.KeyExpireAsync(key, expiry);
-        }
-
-        await hashSetTask;
-        if (expiryTask != null)
-        {
-            await expiryTask; 
+            await _redisDatabase.KeyExpireAsync(key, expiry);
         }
 
         return DhtResponse<bool>.Success("Node added/updated successfully", true);
@@ -611,8 +609,19 @@ internal sealed class DhtRedisService : IDhtRedisService
             // Query known peers if the current node is not the responsible node
             if (node.KnownPeers != null && node.KnownPeers.Any())
             {
+                // Convert PeerNode to NodeInfo
+                var nodeInfos = node.KnownPeers.Select(peer => new NodeInfo
+                {
+                    NodeHash = peer.NodeHash,
+                    NodeBic = peer.NodeBic,
+                    NodeEndPoint = peer.NodeEndPoint,
+                    NodeUri = peer.NodeUri,
+                    LastSeen = peer.LastSeen
+
+                }).ToList();
+
                 // Recursively search within the known peers of the current node
-                var peerNode = await FindNodeRecursivelyAsync(bicHash, node.KnownPeers, visited, currentNodeHash, depth - 1);
+                var peerNode = await FindNodeRecursivelyAsync(bicHash, nodeInfos, visited, currentNodeHash, depth - 1);
                 return peerNode;
             }
         }
