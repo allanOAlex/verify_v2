@@ -1,0 +1,6 @@
+message AccountRequest {
+  string sender_bic = 1;
+  string recipient_bic = 2;
+  string recipient_account_number = 3;
+  string correlation_id = 4;
+}

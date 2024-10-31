@@ -19,7 +19,7 @@ internal class InMemoryCacheService : ICacheService
 
     public Task<T?> GetAsync<T>(string key)
     {
-        throw new NotImplementedException();
+        return Task.FromResult(Get<T>(key));
     }
 
     public void Remove(string key)
@@ -29,7 +29,7 @@ internal class InMemoryCacheService : ICacheService
 
     public Task RemoveAsync(string key)
     {
-        throw new NotImplementedException();
+        return Task.Run(() => Remove(key));
     }
 
     public void Set<T>(string key, T value, TimeSpan expiration)
@@ -39,6 +39,12 @@ internal class InMemoryCacheService : ICacheService
 
     public Task SetAsync<T>(string key, T value, TimeSpan absoluteExpiration, TimeSpan slidingExpiration)
     {
-        throw new NotImplementedException();
+        // Use Task.Run to run the synchronous set operation in a task
+        return Task.Run(() =>
+            _memoryCache.Set(key, value, new MemoryCacheEntryOptions
+            {
+                AbsoluteExpirationRelativeToNow = absoluteExpiration,
+                SlidingExpiration = slidingExpiration
+            }));
     }
 }

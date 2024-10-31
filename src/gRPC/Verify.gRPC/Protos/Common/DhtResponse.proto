@@ -1,0 +1,13 @@
+/* Protobuf doesn’t natively support generics or Dictionary. 
+You can use a map for key-value pairs or omit AdditionalData if it’s not essential. 
+
+For DhtResponse, consider making a specific response message for each possible type to avoid generics */
+
+
+message DhtResponse {
+  bool successful = 1;
+  string message = 2;
+  ErrorInfo exception = 3;
+}
+
+

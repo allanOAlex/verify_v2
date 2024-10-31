@@ -1,11 +1,17 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using MessagePack;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Identity.Client;
 using Quartz;
 using Refit;
+using System;
 using System.Text.Json;
 using Verify.Application.Abstractions.DHT;
+using Verify.Application.Abstractions.IServices;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
+using Verify.Infrastructure.Implementations.Caching;
 using Verify.Infrastructure.Implementations.DHT.Jobs;
 using Verify.Infrastructure.Utilities.DHT;
 using Verify.Infrastructure.Utilities.DHT.ApiClients;
@@ -19,6 +25,7 @@ internal sealed class DhtService : IDhtService
     private readonly INodeManagementService _nodeManagementService;
     private readonly IDhtRedisService _dHtRedisService;
     private readonly IScheduler _scheduler;
+    private readonly ICacheService _cacheService;
 
 
     public DhtService(
@@ -28,7 +35,8 @@ internal sealed class DhtService : IDhtService
         IHashingService hashingService,
         INodeManagementService nodeManagementService,
         IDhtRedisService dhtRedisService,
-        ISchedulerFactory schedulerFactory
+        ISchedulerFactory schedulerFactory,
+        ICacheService cacheService
         )
     {
         var httpClient = httpClientFactory.CreateClient();
@@ -41,50 +49,67 @@ internal sealed class DhtService : IDhtService
         _nodeManagementService = nodeManagementService ?? throw new ArgumentNullException(nameof(nodeManagementService));
         _dHtRedisService = dhtRedisService ?? throw new ArgumentNullException(nameof(dhtRedisService));
         _configuration = configuration ?? throw new ArgumentNullException(nameof(configuration));
+        _cacheService = cacheService ?? throw new ArgumentNullException(nameof(cacheService));
 
     }
 
 
     public async Task<DhtResponse<AccountInfo>> FetchAccountData_(AccountRequest accountRequest)
     {
-        var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
-        if (accountResponse.Successful)
-            return accountResponse;
-
-        var queryUrlResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.RecipientBic);
-        var queryUrlResponseUri = new Uri(queryUrlResponse.Data!);
-        var queryUrl = $"{queryUrlResponseUri.Scheme}://{queryUrlResponseUri.Host}:{queryUrlResponseUri.Port}/";
-
-        var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
-        if (!accountDataResponse.Successful)
+        try
         {
-            return DhtResponse<AccountInfo>.Failure("Failed to retrieve account details from the responsible node.");
+            var accountResponse = await LookupAccountInMemoryAsync(accountRequest);
+            if (accountResponse.Successful) return accountResponse;
+
+            var queryUrlResponse = _nodeManagementService.GetNodeEndpointFromConfigAsync(accountRequest.RecipientBic);
+            var queryUrlResponseUri = new Uri(queryUrlResponse.Data!);
+            var queryUrl = $"{queryUrlResponseUri.Scheme}://{queryUrlResponseUri.Host}:{queryUrlResponseUri.Port}/";
+
+            // Check if queryUrl has a valid scheme and port
+            if (!Uri.TryCreate(queryUrl, UriKind.Absolute, out var uri) || string.IsNullOrEmpty(uri.Scheme) || uri.Port == -1)
+            {
+                return DhtResponse<AccountInfo>.Failure("Invalid URL: The query URL is missing a scheme or port.");
+            }
+
+            var accountDataResponse = await QueryBankAsync(queryUrl, accountRequest);
+            if (!accountDataResponse.Successful)
+            {
+                return DhtResponse<AccountInfo>.Failure("Failed to retrieve account details from the responsible node.");
+            }
+
+            var accountHashResponse = await _hashingService.ByteHash(accountDataResponse.Data!.AccountNumber!);
+
+            var jobDataMap = new JobDataMap
+            {
+                ["AccountHash"] = accountHashResponse.Data!,
+                ["SerializedAccountInfo"] = MessagePackSerializer.Serialize(accountDataResponse.Data)
+                //["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
+            };
+
+            string jobKey = $"StoreAccountDataJob:{accountHashResponse.Data}:{DateTime.UtcNow.ToString("yyyyMMddHHmmss")}";
+            var storeAccountJobKey = new JobKey(jobKey);
+            if (!await _scheduler.CheckExists(storeAccountJobKey))
+            {
+                IJobDetail jobDetail = JobBuilder
+                    .Create<StoreAccountDataJob>()
+                    .WithIdentity(storeAccountJobKey)
+                    .StoreDurably() // we need to store durably if no trigger is associated
+                    .WithDescription("Store-AccountData-Job")
+                    .Build();
+
+                await _scheduler.AddJob(jobDetail, true);
+            }
+
+            await _scheduler.TriggerJob(storeAccountJobKey, jobDataMap);
+
+            return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
         }
-
-        var accountHashResponse = await _hashingService.ByteHash(accountDataResponse.Data!.AccountNumber!);
-        var accountHash = accountHashResponse.Data;
-        var jobDataMap = new JobDataMap
+        catch (Exception)
         {
-            ["AccountHash"] = accountHash!,
-            ["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
-        };
 
-        var storeAccountJobKey = new JobKey("StoreAccountDataJob");
-        if (!await _scheduler.CheckExists(storeAccountJobKey))
-        {
-            IJobDetail jobDetail = JobBuilder
-                .Create<StoreAccountDataJob>()
-                .WithIdentity(storeAccountJobKey)
-                .StoreDurably() // we need to store durably if no trigger is associated
-                .WithDescription("Store-AccountData-Job")
-                .Build();
-
-            await _scheduler.AddJob(jobDetail, true);
+            throw;
         }
-
-        await _scheduler.TriggerJob(storeAccountJobKey, jobDataMap);
-
-        return DhtResponse<AccountInfo>.Success("Account data fetched successfully.", accountDataResponse.Data!);
+        
     }
 
     public async Task<DhtResponse<AccountInfo>> FetchAccountData(AccountRequest accountRequest)
@@ -191,7 +216,8 @@ internal sealed class DhtService : IDhtService
         var jobDataMap = new JobDataMap
         {
             ["AccountHash"] = accountHash!,
-            ["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
+            ["SerializedAccountInfo"] = MessagePackSerializer.Serialize(accountDataResponse.Data)
+            //["SerializedAccountInfo"] = JsonSerializer.Serialize(accountDataResponse.Data)
         };
 
         var storeAccountJobKey = new JobKey("StoreAccountDataJob");
@@ -399,7 +425,7 @@ internal sealed class DhtService : IDhtService
     public async Task<DhtResponse<AccountInfo>> StoreAccountDataAsync(AccountInfo accountInfo)
     {
         var accountHashResponse = await _hashingService.ByteHash(accountInfo.AccountNumber!);
-        await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHashResponse.Data!, JsonSerializer.Serialize(accountInfo), TimeSpan.FromHours(24));
+        await _dHtRedisService.SetNodeByteValueAsync($"dht:accounts", accountHashResponse.Data!, MessagePackSerializer.Serialize(accountInfo), TimeSpan.FromHours(24));
         return DhtResponse<AccountInfo>.Success(
             "Account data stored successfully.",
             new AccountInfo

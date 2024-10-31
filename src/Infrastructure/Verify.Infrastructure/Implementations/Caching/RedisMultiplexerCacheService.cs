@@ -1,4 +1,5 @@
 ﻿using System.Text.Json;
+using MessagePack;
 using StackExchange.Redis;
 
 using Verify.Application.Abstractions.IServices;
@@ -17,7 +18,7 @@ internal sealed class RedisMultiplexerCacheService : ICacheService
     {
         var db = _redis.GetDatabase();
         var value = await db.StringGetAsync(key);
-        return value.HasValue ? JsonSerializer.Deserialize<T>(value!) : default;
+        return value.HasValue ? MessagePackSerializer.Deserialize<T>(value!) : default;
     }
 
     public async Task RemoveAsync(string key)
@@ -32,7 +33,9 @@ internal sealed class RedisMultiplexerCacheService : ICacheService
 
         // Use absoluteExpiration for the expiration time.
         // To handle sliding expiration, you'll need to implement a logic to reset the expiration time on access.
-        var serializedValue = JsonSerializer.Serialize(value);
+        //var serializedValue = JsonSerializer.Serialize(value);
+        var serializedValue = MessagePackSerializer.Serialize(value);
+
         var expirationTime = absoluteExpiration > slidingExpiration ? absoluteExpiration : slidingExpiration;
         await db.StringSetAsync(key, serializedValue, expirationTime);
     }

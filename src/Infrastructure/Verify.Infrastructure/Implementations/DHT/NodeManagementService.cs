@@ -1,5 +1,6 @@
 ﻿using System.Collections.Concurrent;
 using System.Text.Json;
+using MessagePack;
 using Microsoft.Extensions.Configuration;
 using Polly;
 using Verify.Application.Abstractions.DHT;
@@ -73,15 +74,16 @@ internal sealed class NodeManagementService : INodeManagementService
         
 
         //var existingNodeResponse = await _dhtRedisService.GetNodeAsync(redisNodesKey, nodeInfo.NodeHash);
-        var existingNodeResponse = await _dhtRedisService.GetNodeAsync(string.Concat(redisNodesKey,$":{nodeInfo.NodeHash}"), nodeInfo.NodeHash);
+        var existingNodeResponse = await _dhtRedisService.GetNodeAsync(redisNodesKey, nodeInfo.NodeHash);
         if (existingNodeResponse.Data != null)
         {
             var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
-            var serializedNode = JsonSerializer.Serialize(updatedNode);
+            //var serializedNode = JsonSerializer.Serialize(updatedNode);
+            var serializedNode = MessagePackSerializer.Serialize(updatedNode);
 
-            await _dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+            await _dhtRedisService.SetNodeByteValueAsync(redisNodesKey, currentNodeHash.Data!, serializedNode, TimeSpan.FromHours(24), isCentralNode);
 
-            var setResponse = await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
+            var setResponse = await _dhtRedisService.SetSortedNodeByteValueAsync(redisBucketsKey, serializedNode, distance);
             return setResponse.Successful
                 ? DhtResponse<bool>.Success("Node added/updated successfully", true, null, new Dictionary<string, object>() { { "node", nodeInfo } })
                 : DhtResponse<bool>.Failure("Node addition/update failed");
@@ -147,9 +149,10 @@ internal sealed class NodeManagementService : INodeManagementService
         var bucketCount = await _dhtRedisService.GetBucketCountUsingLengthAsync(redisBucketsKey);
         if (bucketCount.Data < BucketSize)
         {
-            var serializedNode = JsonSerializer.Serialize(nodeInfo);
-            await _dhtRedisService.SetNodeAsync(redisNodesKey, nodeInfo.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
-            return await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
+            //var serializedNode = JsonSerializer.Serialize(nodeInfo);
+            var serializedNode = MessagePackSerializer.Serialize(nodeInfo);
+            await _dhtRedisService.SetNodeByteValueAsync(redisNodesKey, nodeInfo.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+            return await _dhtRedisService.SetSortedNodeByteValueAsync(redisBucketsKey, serializedNode, distance);
 
         }
         else if (withEviction)
@@ -170,10 +173,11 @@ internal sealed class NodeManagementService : INodeManagementService
             var isReachable = await PingNodeAsync(leastRecentlySeenNode.Data!);
             if (!isReachable.Data)
             {
-                var serializedNode = JsonSerializer.Serialize(newNode);
+                //var serializedNode = JsonSerializer.Serialize(newNode);
+                var serializedNode = MessagePackSerializer.Serialize(newNode);
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
-                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNode, distance);
-                await _dhtRedisService.SetNodeAsync(redisNodesKey, newNode.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
+                await _dhtRedisService.SetSortedNodeByteValueAsync(redisBucketsKey, serializedNode, distance);
+                await _dhtRedisService.SetNodeByteValueAsync(redisNodesKey, newNode.NodeHash, serializedNode, TimeSpan.FromHours(24), isCentralNode);
                 return DhtResponse<bool>.Success("Replaced least recently seen node", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
 
@@ -181,9 +185,9 @@ internal sealed class NodeManagementService : INodeManagementService
             if (ShouldReplaceNode(leastRecentlySeenNode.Data!, newNode, isCentralNode))
             {
                 //var serializedNodeToAdd = JsonSerializer.Serialize(newNode);
-                string serializedNodeToAdd = $"{newNode.NodeHash}:{JsonSerializer.Serialize(newNode)}";
+                var serializedNodeToAdd = MessagePackSerializer.Serialize(newNode);
                 await _dhtRedisService.RemoveSortedSetNodeAsync(redisNodesKey, leastRecentlySeenNode.Data!);
-                await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNodeToAdd, distance);
+                await _dhtRedisService.SetSortedNodeByteValueAsync(redisBucketsKey, serializedNodeToAdd, distance);
                 return DhtResponse<bool>.Success("Replaced least recently seen node based on LRS policy", true, null, new Dictionary<string, object>() { { "node", newNode } });
             }
             else
@@ -192,10 +196,11 @@ internal sealed class NodeManagementService : INodeManagementService
             }
         }
 
-        var serializedNewNode = JsonSerializer.Serialize(newNode);
+        var serializedNewNode = MessagePackSerializer.Serialize(newNode);
+        //var serializedNewNode = JsonSerializer.Serialize(newNode);
         //string serializedNewNode = $"{newNode.NodeHash}:{JsonSerializer.Serialize(newNode)}";
-        await _dhtRedisService.SetSortedNodeAsync(redisBucketsKey, serializedNewNode, distance);
-        await _dhtRedisService.SetNodeAsync(redisNodesKey, newNode.NodeHash, serializedNewNode, TimeSpan.FromHours(24), isCentralNode);
+        await _dhtRedisService.SetSortedNodeByteValueAsync(redisBucketsKey, serializedNewNode, distance);
+        await _dhtRedisService.SetNodeByteValueAsync(redisNodesKey, newNode.NodeHash, serializedNewNode, TimeSpan.FromHours(24), isCentralNode);
         return DhtResponse<bool>.Success("No node to replace: - added new node successfully", true, null, new Dictionary<string, object>() { { "node", newNode } });
 
     }

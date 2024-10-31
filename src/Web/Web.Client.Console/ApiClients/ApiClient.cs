@@ -12,7 +12,6 @@ internal sealed class ApiClient : IApiClient
     public ApiClient(IHttpClientFactory httpClientFactory)
     {
         _httpClient = httpClientFactory.CreateClient("DHT");
-        _httpClient.BaseAddress = new Uri("https://localhost:7260/");
     }
 
     public async Task<AccountInfo> FetchAccountData(AccountRequest request, string apiEndPoint)

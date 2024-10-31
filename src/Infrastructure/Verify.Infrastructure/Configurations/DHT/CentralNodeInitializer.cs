@@ -1,4 +1,5 @@
-﻿using Microsoft.Extensions.Configuration;
+﻿using MessagePack;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using System.Text.Json;
@@ -49,11 +50,12 @@ public sealed class CentralNodeInitializer : IHostedService
                 LastSeen = DateTimeOffset.UtcNow.ToUnixTimeSeconds()
             };
 
-            var serializedCentralNode = JsonSerializer.Serialize(centralNode);
+            //var serializedCentralNode = JsonSerializer.Serialize(centralNode);
+            var serializedCentralNode = MessagePackSerializer.Serialize(centralNode);
 
             // Add the central node to Redis without expiry
-            await _dhtRedisService.SetSortedNodeAsync($"dht:buckets:{{0}}", serializedCentralNode, 0);
-            await _dhtRedisService.SetNodeAsync($"dht:nodes", centralNodeHash.Data!, serializedCentralNode, isCentralNode: true);
+            await _dhtRedisService.SetSortedNodeByteValueAsync($"dht:buckets:{{0}}", serializedCentralNode, 0);
+            await _dhtRedisService.SetNodeByteValueAsync($"dht:nodes", centralNodeHash.Data!, serializedCentralNode, isCentralNode: true);
         }
     }
 

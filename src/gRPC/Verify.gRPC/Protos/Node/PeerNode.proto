@@ -1,0 +1,7 @@
+message PeerNode {
+  string node_bic = 1;
+  bytes node_hash = 2;
+  string node_end_point = 3;
+  string node_uri = 4;
+  double last_seen = 5;
+}

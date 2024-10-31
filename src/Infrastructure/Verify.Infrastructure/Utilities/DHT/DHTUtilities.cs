@@ -1,6 +1,9 @@
-﻿using System.Collections.Concurrent;
+﻿using Polly.Extensions.Http;
+using Polly;
+using System.Collections.Concurrent;
 using System.Numerics;
 using Verify.Application.Dtos.Bank;
+using MessagePack;
 
 namespace Verify.Infrastructure.Utilities.DHT;
 
@@ -165,5 +168,15 @@ public static class DhtUtilities
         var rejectedNodesQueue = new ConcurrentQueue<NodeInfo>();
         rejectedNodesQueue.Enqueue(rejectedNode);
     }
+
+    public static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()
+    {
+        return HttpPolicyExtensions
+            .HandleTransientHttpError()
+            .WaitAndRetryAsync(3, retryAttempt =>
+                TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)));
+    }
+
+    
 }
 

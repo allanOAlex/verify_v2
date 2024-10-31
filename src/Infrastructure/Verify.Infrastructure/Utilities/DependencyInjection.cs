@@ -123,6 +123,13 @@ public static class DependencyInjection
         //Add the Quartz hosted service
         services.AddQuartzHostedService(q => q.WaitForJobsToComplete = true);
 
+        //services.AddRefitClient<IApiClient>()
+        //.ConfigureHttpClient(client =>
+        //{
+        //    client.BaseAddress = new Uri("https://api.example.com");
+        //    client.Timeout = TimeSpan.FromSeconds(30);
+        //}).AddPolicyHandler(DHTUtilities.GetRetryPolicy());
+
         switch (cacheSettings.CacheType)
         {
             case { } type when type.Equals("redis", StringComparison.OrdinalIgnoreCase):

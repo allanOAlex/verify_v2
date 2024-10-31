@@ -1,6 +1,9 @@
-﻿using System.Text.Json.Serialization;
+﻿using MessagePack;
+using System.Text.Json.Serialization;
 
 namespace Verify.Application.Dtos.Common;
+
+[MessagePackObject]
 public record DhtResponse<T>
 {
     public bool Successful { get; init; } = true;

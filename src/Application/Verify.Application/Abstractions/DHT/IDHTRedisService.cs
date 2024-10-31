@@ -27,9 +27,11 @@ public interface IDhtRedisService
     Task<List<NodeInfo>> GetKClosestNodesAsync(byte[] nodeHash, int k = 20);
     Task<List<NodeInfo>> GetKClosestNodesWithAlphaAsync(byte[] nodeHash, int k = 20, int alpha = 3);
     Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false);
+    Task<DhtResponse<bool>> SetNodeByteValueAsync(string key, byte[] field, byte[] serializedValue, TimeSpan? expiry = null, bool isCentralNode = false);
 
     // Sorted set to store nodes by distance or other criteria
     Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, string serializedValue, double score);
+    Task<DhtResponse<bool>> SetSortedNodeByteValueAsync(string bucketKey, byte[] serializedValue, double score);
     Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, string serializedValue);
     Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, string serializedValue, double score);
     Task<DhtResponse<bool>> RemoveNodeAsync(string key, byte[] field);

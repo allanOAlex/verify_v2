@@ -1,4 +1,5 @@
 ﻿namespace Verify.Application.Dtos.Common;
+
 public record PaginationSetting
 {
     public int DefaultPageSize { get; init; } = 50;

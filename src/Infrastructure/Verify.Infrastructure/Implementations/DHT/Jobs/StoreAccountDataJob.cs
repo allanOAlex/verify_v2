@@ -1,4 +1,5 @@
-﻿using Polly;
+﻿using Microsoft.Identity.Client;
+using Polly;
 using Quartz;
 using Quartz.Util;
 using StackExchange.Redis;
@@ -24,21 +25,23 @@ internal sealed class StoreAccountDataJob : IStoreAccountDataJob
 
     public async Task Execute(IJobExecutionContext context)
     {
+        
         try
         {
             var accountHash = context.MergedJobDataMap["AccountHash"] as byte[] ?? [];
-            var serializedAccountInfo = context.MergedJobDataMap["SerializedAccountInfo"] as string ?? string.Empty;
+            var serializedAccountInfo = context.MergedJobDataMap["SerializedAccountInfo"] as byte[] ?? [];
 
-            if (accountHash != null && !serializedAccountInfo.IsNullOrWhiteSpace())
+            //if (accountHash != null && !serializedAccountInfo.IsNullOrWhiteSpace())
+            if (accountHash != null && serializedAccountInfo != null)
             {
                 // Retry policy in case of transient Redis failures
                 await Policy
                     .Handle<RedisException>()
                     .RetryAsync(3)
                     .ExecuteAsync(async () =>
-                        await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHash, serializedAccountInfo, TimeSpan.FromHours(24)));
+                        await _dHtRedisService.SetNodeByteValueAsync($"dht:accounts", accountHash, serializedAccountInfo, TimeSpan.FromHours(24)));
 
-                await _dHtRedisService.SetNodeAsync($"dht:accounts", accountHash, serializedAccountInfo!, TimeSpan.FromHours(24));
+                await _dHtRedisService.SetNodeByteValueAsync($"dht:accounts", accountHash, serializedAccountInfo!, TimeSpan.FromHours(24));
             }
         }
         catch (Exception)
