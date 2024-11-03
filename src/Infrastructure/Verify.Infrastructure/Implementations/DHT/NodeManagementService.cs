@@ -243,6 +243,8 @@ internal sealed class NodeManagementService : INodeManagementService
             if (existingNodeResponse?.Data != null)
             {
                 var updatedNode = UpdateNodeInfo(existingNodeResponse.Data!, nodeInfo);
+
+                // ToDo: Do we need to first remove the existing then add the new updated one? Will it go to the same location? Is it must that it goes to the same location?
                 await dhtRedisService.SetNodeAsync(redisNodesKey, currentNodeHash.Data!, JsonConvert.SerializeObject(updatedNode), TimeSpan.FromHours(24), isCentralNode);
                 await dhtRedisService.SetSortedNodeAsync(redisBucketsKey, updatedNode, distance);
 
