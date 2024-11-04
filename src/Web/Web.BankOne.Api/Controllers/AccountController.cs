@@ -1,5 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 
 using Web.BankOne.Api.Features.Account.Dtos;
 
@@ -31,43 +30,22 @@ public class AccountController : ControllerBase
         },
     };
 
-    public AccountController()
-    {
-            
-    }
-
     [HttpGet("ping")]
-    public async Task<ActionResult<bool>> Ping()
+    public ActionResult<bool> Ping()
     {
-        try
-        {
-            return Ok(true);
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
+        return Ok(true);
     }
 
     [HttpPost("fetchaccountinfo")]
-    public async Task<ActionResult<AccountResponse>> FetchAccountInfo([FromBody] AccountRequest accountRequest)
+    public ActionResult<AccountResponse> FetchAccountInfo([FromBody] AccountRequest accountRequest)
     {
-        try
+        var accountInfo = AccountData.FirstOrDefault(a => a.AccountNumber == accountRequest.RecipientAccountNumber);
+        if (accountInfo == null)
         {
-            var accountInfo = AccountData.FirstOrDefault(a => a.AccountNumber == accountRequest.RecipientAccountNumber);
-            if (accountInfo == null)
-            {
-                return NotFound("Account not found");
-            }
-
-            return Ok(accountInfo);
+            return NotFound("Account not found");
         }
-        catch (Exception)
-        {
 
-            throw;
-        }
+        return Ok(accountInfo);
     }
 
 }

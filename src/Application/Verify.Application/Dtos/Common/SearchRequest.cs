@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-namespace Verify.Application.Dtos.Common;
+﻿namespace Verify.Application.Dtos.Common;
 public record SearchRequest
 {
     public string? SearchParam { get; init; }

@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using FluentValidation;
+﻿using FluentValidation;
 
 using Verify.Application.Dtos.Account;
 
@@ -13,11 +7,11 @@ public class AccountRequestValidator : AbstractValidator<AccountRequest>
 {
     public AccountRequestValidator()
     {
-        RuleFor(x => x.SenderBIC)
+        RuleFor(x => x.SenderBic)
             .NotEmpty().WithMessage("Initiator BIC is required.")
             .Length(8, 11).WithMessage("BIC must be between 8 and 11 characters.");
 
-        RuleFor(x => x.RecipientBIC)
+        RuleFor(x => x.RecipientBic)
             .NotEmpty().WithMessage("Recipient BIC is required.")
             .Length(8, 11).WithMessage("BIC must be between 8 and 11 characters.");
 

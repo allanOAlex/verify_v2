@@ -9,16 +9,16 @@ namespace Verify.Api.Middleware;
 
 public class ApiExceptionHandler : IExceptionHandler
 {
-    private readonly ILogger<ApiExceptionHandler> logger;
+    private readonly ILogger<ApiExceptionHandler> _logger;
 
-    public ApiExceptionHandler(ILogger<ApiExceptionHandler> Logger)
+    public ApiExceptionHandler(ILogger<ApiExceptionHandler> logger)
     {
-        logger = Logger;
+        _logger = logger;
     }
 
     public async ValueTask<bool> TryHandleAsync(HttpContext httpContext, Exception exception, CancellationToken cancellationToken)
     {
-        logger.LogError(exception, "Exception occurred in the API.");
+        _logger.LogError(exception, "Exception occurred in the API.");
 
         var problemDetails = new ProblemDetails
         {
@@ -76,9 +76,6 @@ public class ApiExceptionHandler : IExceptionHandler
                 }
 
                 problemDetails.Extensions["errors"] = errorList;
-                break;
-
-            default:
                 break;
         }
 

@@ -1,11 +1,8 @@
 ﻿using FluentValidation;
-
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 
 using Verify.Application.Abstractions.Interfaces;
 using Verify.Application.Dtos.Account;
-using Verify.Application.Dtos.Common;
 using Verify.Application.Validations.Account.RequestValidators;
 using Verify.Shared.Exceptions;
 
@@ -15,13 +12,13 @@ namespace Verify.Api.Controllers;
 
 [Route("api/[controller]")]
 [ApiController]
-public class DHTController : ControllerBase
+public class DhtController : ControllerBase
 {
-    private readonly IServiceManager serviceManager;
+    private readonly IServiceManager _serviceManager;
 
-    public DHTController(IServiceManager ServiceManager)
+    public DhtController(IServiceManager serviceManager)
     {
-        serviceManager = ServiceManager;
+        _serviceManager = serviceManager;
     }
 
     [HttpPost("fetchaccountinfo")]
@@ -33,7 +30,9 @@ public class DHTController : ControllerBase
             throw new ValidationException("Request Object is Invalid", errors: validator.Validate(fetchAccountRequest).Errors);
         }
 
-        var serviceResponse = await serviceManager.DHTService.FetchAccountData(fetchAccountRequest);
+        var serviceResponse = await _serviceManager.DhtService.FetchAccountData_(fetchAccountRequest);
+        //var serviceResponse = await _serviceManager.DhtService.FetchAccountData(fetchAccountRequest);
+        //var serviceResponse = await _serviceManager.DhtService._FetchAccountData(fetchAccountRequest);
         if (!serviceResponse.Successful)
         {
             if (serviceResponse.Exception is NoContentException || serviceResponse.Data == null)
@@ -47,10 +46,6 @@ public class DHTController : ControllerBase
 
         return Ok(serviceResponse.Data);
     }
-
-   
-
-
 }
 
 

@@ -1,0 +1,11 @@
+//Uri is not natively supported, so you’ll need to serialize it as a string.
+
+message NodeInfo {
+  string node_bic = 1;
+  bytes node_hash = 2;
+  string node_end_point = 3;
+  string node_uri = 4;
+  repeated PeerNode known_peers = 5;
+  repeated AccountInfo accounts = 6;
+  double last_seen = 7;
+}

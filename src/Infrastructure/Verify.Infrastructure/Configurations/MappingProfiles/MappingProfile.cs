@@ -1,13 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using AutoMapper;
+﻿using AutoMapper;
 
 using Verify.Application.Dtos.Account;
-using Verify.Application.Dtos.Log;
+using Verify.Application.Dtos.Logging;
 using Verify.Domain.Entities;
 
 

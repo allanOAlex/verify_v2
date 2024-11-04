@@ -1,12 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using Microsoft.EntityFrameworkCore;
-
-using Verify.Application.Abstractions.Interfaces;
+﻿using Verify.Application.Abstractions.Interfaces;
 using Verify.Application.Abstractions.IRepositories;
 using Verify.Persistence.DataContext;
 
@@ -15,21 +7,21 @@ public class UnitOfWork : IUnitOfWork
 {
     public ILogRepository LogRepository { get; private set; }
 
-    private readonly DBContext context;
+    private readonly DbContext _context;
 
     public UnitOfWork(
         ILogRepository logRepository,
-        DBContext Context)
+        DbContext context)
     {
         LogRepository = logRepository;
-        context = Context;
+        _context = context;
     }
 
 
 
     public Task<int> CompleteAsync()
     {
-        var result = context.SaveChangesAsync();
+        var result = _context.SaveChangesAsync();
         return result;
     }
 
@@ -44,7 +36,7 @@ public class UnitOfWork : IUnitOfWork
     {
         if (disposing)
         {
-            context.Dispose();
+            _context.Dispose();
         }
     }
 }

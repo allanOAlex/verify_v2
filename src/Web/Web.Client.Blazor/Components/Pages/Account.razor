@@ -1,0 +1,80 @@
+﻿@page "/account"
+@rendermode InteractiveServer
+
+
+<PageTitle>Account Info</PageTitle>
+
+<h3>Account Info</h3>
+
+<hr />
+
+<div class="my-2">
+    @if (accountInfo != null)
+    {
+        <p>Account Holder: @accountInfo.AccountName</p>
+        <p>Account Number: @accountInfo.AccountNumber</p>
+        <p>Time Taken: @responseTime ms</p>
+    }
+</div>
+
+@code {
+
+    private AccountInfo? accountInfo;
+    private long responseTime;
+
+    private readonly AccountRequest accountRequest1 = new()
+        {
+            SenderBic = "BARCKENX",
+            RecipientBic = "SCBLKENX",
+            RecipientAccountNumber = "2456345646"
+        };
+
+
+    [Inject]
+    private IApiClient ApiClient { get; set; } = default!;
+
+    [Inject]
+    private IConfiguration Configuration { get; set; } = default!;
+
+    [Inject]
+    private ICacheService CacheService { get; set; } = default!;
+
+
+    private async Task FetchAccountInfo()
+    {
+        try
+        {
+            var stopwatch = Stopwatch.StartNew();
+
+            // var cacheKey = CacheKeyHelper.GenerateCacheKey(accountRequest1.RecipientBic, accountRequest1.RecipientAccountNumber);
+            // accountInfo = await CacheService.GetAsync<AccountInfo>(cacheKey);
+            if (accountInfo == null)
+            {
+                var apiEndPoint = Configuration["AppSettings:EndPoints:DHT:FetchAccountInfo"];
+                if (string.IsNullOrEmpty(apiEndPoint))
+                {
+                    throw new InvalidOperationException("API endpoint is not configured.");
+                }
+
+                accountInfo = await ApiClient.FetchAccountData(accountRequest1, apiEndPoint);
+                //await CacheService.SetAsync(cacheKey, accountInfo, TimeSpan.FromHours(12), TimeSpan.FromMinutes(30));
+            }
+
+            stopwatch.Stop();
+            responseTime = stopwatch.ElapsedMilliseconds;
+
+            // Trigger UI update
+            StateHasChanged();
+        }
+        catch (Exception)
+        {
+            
+            throw;
+        }
+        
+    }
+}
+
+<hr />
+<button class="btn btn-primary btn-sm me-3 mb-3" @onclick="FetchAccountInfo">Fetch Account Info</button>
+<button class="btn btn-secondary btn-sm mb-3" @onclick="FetchAccountInfo">Refetch Account Info</button>

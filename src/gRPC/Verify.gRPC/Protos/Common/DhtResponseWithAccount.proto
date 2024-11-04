@@ -1,0 +1,6 @@
+message DhtResponseWithAccount {
+  bool successful = 1;
+  string message = 2;
+  AccountInfo data = 3;
+  ErrorInfo exception = 4;
+}

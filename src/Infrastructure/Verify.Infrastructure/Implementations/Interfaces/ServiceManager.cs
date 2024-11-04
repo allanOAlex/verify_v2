@@ -1,10 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using Verify.Application.Abstractions.DHT;
+﻿using Verify.Application.Abstractions.DHT;
 using Verify.Application.Abstractions.DHT.Jobs;
 using Verify.Application.Abstractions.Interfaces;
 using Verify.Application.Abstractions.IServices;
@@ -14,11 +8,12 @@ internal sealed class ServiceManager : IServiceManager
 {
     public ICacheService CacheService { get; }
     public ILogService LogService { get; }
-    public IDHTService DHTService { get; }
-    public IDHTRedisService DHTRedisService { get; }
+    public IDhtService DhtService { get; }
+    public IDhtRedisService DhtRedisService { get; }
     public IHashingService HashingService { get; }
     public INodeManagementService NodeManagementService { get; }
-    public IDHTMaintenanceJob DHTMaintenanceJob { get; }
+    public IDhtMaintenanceJob DhtMaintenanceJob { get; }
+    public IAddNodeToPeersJob AddNodeToPeersJob { get; }
 
 
 
@@ -26,18 +21,21 @@ internal sealed class ServiceManager : IServiceManager
     public ServiceManager(
         ICacheService cacheService, 
         ILogService logService, 
-        IDHTService dHTService,
-        IDHTRedisService dHTRedisService,
+        IDhtService dHtService,
+        IDhtRedisService dHtRedisService,
         IHashingService hashingService,
         INodeManagementService nodeManagementService,
-        IDHTMaintenanceJob dHTMaintenanceJob)
+        IDhtMaintenanceJob dHtMaintenanceJob,
+        IAddNodeToPeersJob addNodeToPeersJob
+        )
     {
         CacheService = cacheService;
         LogService = logService;
-        DHTService = dHTService;
-        DHTRedisService = dHTRedisService;
+        DhtService = dHtService;
+        DhtRedisService = dHtRedisService;
         HashingService = hashingService;
         NodeManagementService = nodeManagementService;
-        DHTMaintenanceJob = dHTMaintenanceJob;
+        DhtMaintenanceJob = dHtMaintenanceJob;
+        AddNodeToPeersJob = addNodeToPeersJob;
     }
 }

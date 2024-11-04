@@ -1,20 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-
-using Verify.Application.Abstractions.IServices;
+﻿using Verify.Application.Abstractions.IServices;
 
 namespace Verify.Infrastructure.Implementations.Caching;
 internal sealed class AzureCacheService : ICacheService
 {
-    public AzureCacheService()
-    {
-
-    }
-
-
     public T Get<T>(string key)
     {
         throw new NotImplementedException();

@@ -1,0 +1,10 @@
+
+/* Protobuf doesn’t support byte[], but you can use bytes in Protobuf, which translates to ByteString in gRPC. 
+Nullable values and collections can also be handled by defining them directly in the .proto file. */
+
+message AccountInfo {
+  bytes account_hash = 1;
+  string account_name = 2;
+  string account_number = 3;
+  string account_bic = 4;
+}

@@ -1,0 +1,4 @@
+message ErrorInfo {
+  string message = 1;
+  int32 code = 2; // Optional: Error codes if you need them.
+}

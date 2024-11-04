@@ -1,50 +1,48 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Runtime.InteropServices;
-using System.Text;
-using System.Threading.Tasks;
-
-using Microsoft.IdentityModel.Tokens;
-
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
-
+﻿using MessagePack;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Identity.Client;
 using StackExchange.Redis;
-
+using System.Text.Json;
 using Verify.Application.Abstractions.DHT;
 using Verify.Application.Dtos.Account;
 using Verify.Application.Dtos.Bank;
 using Verify.Application.Dtos.Common;
-using Verify.Domain.Enums;
 using Verify.Infrastructure.Utilities.DHT;
-
-using static MassTransit.ValidationResultExtensions;
+using Verify.Shared.Utilities;
 
 namespace Verify.Infrastructure.Implementations.DHT;
-internal sealed class DHTRedisService : IDHTRedisService
+internal sealed class DhtRedisService : IDhtRedisService
 {
-    private readonly IDatabase redisDatabase;
+    private readonly IDatabase _redisDatabase;
+    private readonly IConfiguration _configuration;
+    private readonly IHashingService _hashingService;
 
-    public DHTRedisService(IDatabase RedisDatabase)
+    public DhtRedisService(IDatabase redisDatabase, IConfiguration configuration, IHashingService hashingService)
     {
-        redisDatabase = RedisDatabase;
+        _redisDatabase = redisDatabase;
+        _configuration = configuration;
+        _hashingService = hashingService;
             
     }
 
 
-    public async Task<DHTResponse<bool>> NodeExistsAsync(string key, byte[] hash)
+    public ITransaction CreateTransaction()
+    {
+        return _redisDatabase.CreateTransaction();
+    }
+
+    public async Task<DhtResponse<bool>> NodeExistsAsync(string key, byte[] hash)
     {
         try
         {
-            bool exists = await redisDatabase.HashExistsAsync(key, hash);
+            bool exists = await _redisDatabase.HashExistsAsync(key, hash);
             string message = exists
                 ? $"Node {Convert.ToBase64String(hash)} exists"
                 : $"Node {Convert.ToBase64String(hash)} does not exist";
 
             return exists
-                ? DHTResponse<bool>.Success(message, true)
-                : DHTResponse<bool>.Failure(message, false);
+                ? DhtResponse<bool>.Success(message, true)
+                : DhtResponse<bool>.Failure(message);
         }
         catch (Exception ex)
         {
@@ -52,14 +50,14 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<bool>> SortedSetNodeExistsByScoreAsync(string key, string serializedValue)
+    public async Task<DhtResponse<bool>> SortedSetNodeExistsByScoreAsync(string key, string serializedValue)
     {
         try
         {
-            var exists = await redisDatabase.SortedSetScoreAsync(key, serializedValue);
+            var exists = await _redisDatabase.SortedSetScoreAsync(key, serializedValue);
             return exists.HasValue
-                ? DHTResponse<bool>.Success("Node exists", true)
-                : DHTResponse<bool>.Failure("Node does not exist", false);
+                ? DhtResponse<bool>.Success("Node exists", true)
+                : DhtResponse<bool>.Failure("Node does not exist");
         }
         catch (Exception ex)
         {
@@ -67,14 +65,15 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<bool>> SortedSetNodeExistsByRankAsync(string key, byte[] hash)
+    public async Task<DhtResponse<bool>> SortedSetNodeExistsByRankAsync(string key, byte[] hash)
     {
         try
         {
-            var exists = await redisDatabase.SortedSetRankAsync(key, JsonConvert.SerializeObject(hash));
+            var serializedHash = MessagePackSerializer.Serialize(hash);
+            var exists = await _redisDatabase.SortedSetRankAsync(key, serializedHash);
             return exists.HasValue
-                ? DHTResponse<bool>.Success("Node exists", true)
-                : DHTResponse<bool>.Failure("Node does not exist", false);
+                ? DhtResponse<bool>.Success("Node exists", true)
+                : DhtResponse<bool>.Failure("Node does not exist");
         }
         catch (Exception ex)
         {
@@ -82,47 +81,43 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<NodeInfo>> GetNodeAsync(string key, byte[] field)
+    public async Task<DhtResponse<NodeInfo>> GetNodeAsync(string key, byte[] field)
     {
         try
         {
-            var nodeData = await redisDatabase.HashGetAsync(key, field);
+            var nodeData = await _redisDatabase.HashGetAsync(key, field);
             if (nodeData.IsNullOrEmpty)
             {
-                return DHTResponse<NodeInfo>.Failure("Node not found.");
+                return DhtResponse<NodeInfo>.Failure("Node not found.");
             }
 
-            var node = JsonConvert.DeserializeObject<NodeInfo>(nodeData!);
-            return DHTResponse<NodeInfo>.Success("Node retrieved successfully", node!);
+            var node = MessagePackSerializer.Deserialize<NodeInfo>(nodeData!);
+            return DhtResponse<NodeInfo>.Success("Node retrieved successfully", node!);
         }
         catch (JsonException jsonEx)
         {
             throw new Exception("Error deserializing the node information from Redis.", jsonEx);
         }
-        catch (Exception)
-        {
-            throw;
-        }
     }
 
-    public async Task<DHTResponse<List<NodeInfo>>> GetNodesByScoreRangeAsync(string key, long minScore, long maxScore)
+    public async Task<DhtResponse<List<NodeInfo>>> GetNodesByScoreRangeAsync(string key, long minScore, long maxScore)
     {
         try
         {
             List<NodeInfo> nodeList = new();
-            var nodes = await redisDatabase.SortedSetRangeByScoreAsync(key, minScore, maxScore);
+            var nodes = await _redisDatabase.SortedSetRangeByScoreAsync(key, minScore, maxScore);
             foreach (var node in nodes)
             {
-                var serializedNodeInfo = await redisDatabase.HashGetAsync(key, node);
+                var serializedNodeInfo = await _redisDatabase.HashGetAsync(key, node);
                 if (!serializedNodeInfo.IsNullOrEmpty)
                 {
-                    nodeList.Add(DeserializeNodeInfo(serializedNodeInfo));
+                    nodeList.Add(MessagePackSerializer.Deserialize<NodeInfo>(serializedNodeInfo!)!);
                 }
             }
 
             return nodes.Any()
-                 ? DHTResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
-                 : DHTResponse<List<NodeInfo>>.Failure("No nodes found in the range", null);
+                 ? DhtResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
+                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range");
         }
         catch (Exception ex)
         {
@@ -130,24 +125,24 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<List<NodeInfo>>> GetNodesByRankRangeAsync(string key, long minScore, long maxScore)
+    public async Task<DhtResponse<List<NodeInfo>>> GetNodesByRankRangeAsync(string key, long minScore, long maxScore)
     {
         try
         {
             List<NodeInfo> nodeList = new();
-            var nodes = await redisDatabase.SortedSetRangeByRankAsync(key, minScore, maxScore);
+            var nodes = await _redisDatabase.SortedSetRangeByRankAsync(key, minScore, maxScore);
             foreach (var node in nodes)
             {
-                var serializedNodeInfo = await redisDatabase.HashGetAsync(key, node);
+                var serializedNodeInfo = await _redisDatabase.HashGetAsync(key, node);
                 if (!serializedNodeInfo.IsNullOrEmpty)
                 {
-                    nodeList.Add(DeserializeNodeInfo(serializedNodeInfo));
+                    nodeList.Add(MessagePackSerializer.Deserialize<NodeInfo>(serializedNodeInfo!)!);
                 }
             }
 
             return nodes.Any()
-                 ? DHTResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
-                 : DHTResponse<List<NodeInfo>>.Failure("No nodes found in the range", null);
+                 ? DhtResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodeList)
+                 : DhtResponse<List<NodeInfo>>.Failure("No nodes found in the range");
         }
         catch (Exception ex)
         {
@@ -155,90 +150,247 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash)
+    public async Task<DhtResponse<NodeInfo>> GetSortedSetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash)
     {
         try
         {
-            // Calculate the bucket key based on the bicHash
-            int distance = DHTUtilities.CalculateXorDistance(currentNodeHash, bicHash); // This can stay if needed for bucket logic
+            int distance = DhtUtilities.CalculateXorDistance(currentNodeHash, bicHash); 
             string redisBucketsKey = $"dht:buckets:{distance}";
 
-            // Fetch nodes from the sorted set that match the bicHash
-            var matchingNodes = await redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue, Exclude.None, Order.Ascending);
+            // Retrieve nodes by ascending order of XOR distance 
+            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue);
 
             // Filter to include only those nodes with the same bicHash
-            var filteredNodes = matchingNodes
-                .Select(nodeData => JsonConvert.DeserializeObject<NodeInfo>(nodeData!))
+            var filteredNodes = sortedNodes
+                .Select(nodeData => MessagePackSerializer.Deserialize<NodeInfo>(nodeData!))
                 .Where(node => node!.NodeHash.SequenceEqual(bicHash))
                 .ToList();
 
-            if (filteredNodes == null || !filteredNodes.Any())
+            if (!filteredNodes.Any())
             {
-                return DHTResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
+                return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
             }
 
             NodeInfo closestNode = null!;
             long closestDistance = long.MaxValue;
 
-            Parallel.ForEach(filteredNodes, node =>
+            var distanceTasks = filteredNodes.Select(async node =>
             {
-                var currentDistance = DHTUtilities.CalculateXorDistance(bicHash, node!.NodeHash);
-
-                // Interlocked to safely update the closest node
-                if (currentDistance < Interlocked.CompareExchange(ref closestDistance, currentDistance, closestDistance))
+                var currentDistance = DhtUtilities.CalculateXorDistance(bicHash, node!.NodeHash);
+                if (currentDistance < closestDistance)
                 {
-                    // Store the closest node in a thread-safe manner
-                    NodeInfo currentClosestNode = node;
-
-                    // This might cause issues because `closestNode` is not thread-safe
-                    // We can use Interlocked to manage this safely
-                    Interlocked.Exchange(ref closestNode, currentClosestNode);
+                    Interlocked.Exchange(ref closestNode, node);
+                    Interlocked.Exchange(ref closestDistance, currentDistance);
                 }
             });
 
-            return closestNode != null
-                ? DHTResponse<NodeInfo>.Success("Closest node found successfully.", closestNode)
-                : DHTResponse<NodeInfo>.Failure("No closest node found in the DHT.", null);
+            await Task.WhenAll(distanceTasks);
+
+            return DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode);
         }
         catch (Exception ex)
         {
-            return DHTResponse<NodeInfo>.Failure($"An error occurred: {ex.Message}");
+            return DhtResponse<NodeInfo>.Failure($"An error occurred: {ex.Message}");
         }
     }
 
-    public async Task<DHTResponse<AccountInfo>> GetAccountNodeAsync(string key, byte[] accountHash)
+    public async Task<DhtResponse<NodeInfo>> GetClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash)
     {
         try
         {
-            var nodeData = await redisDatabase.HashGetAsync(key, accountHash);
-            if (nodeData.IsNullOrEmpty)
+            int distance = DhtUtilities.CalculateXorDistance(currentNodeHash, bicHash);
+            string redisBucketsKey = $"dht:buckets:{distance}";
+
+            // Retrieve all nodes in the bucket
+            var sortedNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue);
+            if (!sortedNodes.Any())
             {
-                return DHTResponse<AccountInfo>.Failure("Account not found.");
+                return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
             }
 
-            var node = JsonConvert.DeserializeObject<AccountInfo>(nodeData!);
-            return DHTResponse<AccountInfo>.Success("Account retrieved successfully", node!);
+            // Filter nodes with matching bicHash concurrently
+            var tasks = sortedNodes.Select(nodeData =>
+            {
+                var node = MessagePackSerializer.Deserialize<NodeInfo>(nodeData!);
+                return Task.FromResult(node!.NodeHash.SequenceEqual(bicHash) ? node : null);
+            });
+
+            // Wait for all filtering tasks to complete
+            var filteredNodes = await Task.WhenAll(tasks);
+
+            // Find the closest node (avoiding Parallel.ForEach)
+            NodeInfo closestNode = null!;
+            long closestDistance = long.MaxValue;
+            foreach (var node in filteredNodes)
+            {
+                if (node != null)
+                {
+                    var currentDistance = DhtUtilities.CalculateXorDistance(bicHash, node.NodeHash);
+                    if (currentDistance < closestDistance)
+                    {
+                        closestDistance = currentDistance;
+                        closestNode = node;
+                    }
+                }
+            }
+
+            return DhtResponse<NodeInfo>.Success("Closest node found successfully.", closestNode);
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            throw;
+            return DhtResponse<NodeInfo>.Failure($"An error occurred: {ex.Message}");
         }
     }
 
-    public async Task<DHTResponse<List<NodeInfo>>> GetAllNodesAsync(string key)
+    public async Task<DhtResponse<NodeInfo>> FindClosestNodeAsync(byte[] currentNodeHash, byte[] bicHash, int maxDepth = 3)
+    {
+        try
+        {
+            int distance = DhtUtilities.CalculateXorDistance(currentNodeHash, bicHash);
+            string redisBucketsKey = $"dht:buckets:{distance}";
+
+            // Retrieve the first node
+            var firstNodeData = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, 0, double.MaxValue, Exclude.None, Order.Ascending, 0, 1);
+            if (!firstNodeData.Any())
+            {
+                return DhtResponse<NodeInfo>.Failure("No nodes found for the given BIC hash.");
+            }
+
+            var firstNode = MessagePackSerializer.Deserialize<NodeInfo>(firstNodeData.First()!);
+
+            // Check for exact match first
+            if (firstNode!.NodeHash.SequenceEqual(bicHash))
+            {
+                return DhtResponse<NodeInfo>.Success("Exact BIC match found.", firstNode);
+            }
+
+            // If not exact match and max depth not reached, recurse
+            if (maxDepth > 0)
+            {
+                // Calculate the distance between the first node and the target bicHash
+                int newDistance = DhtUtilities.CalculateXorDistance(firstNode.NodeHash, bicHash);
+
+                // Recurse with the new distance and reduced max depth
+                return await FindClosestNodeAsync(firstNode.NodeHash, bicHash, maxDepth - 1);
+            }
+
+            // If max depth reached, return the first node as the closest
+            return DhtResponse<NodeInfo>.Success("Closest node found successfully.", firstNode);
+        }
+        catch (Exception ex)
+        {
+            return DhtResponse<NodeInfo>.Failure($"An error occurred: {ex.Message}");
+        }
+    }
+
+    public async Task<DhtResponse<NodeInfo>> FindClosestResponsibleNodeAsync(byte[] currentNodeHash, byte[] bicHash, int maxDepth = 3)
+    {
+        var closestNodeResponse = await GetSortedSetClosestNodeAsync(currentNodeHash, bicHash);
+        if (closestNodeResponse.Data == null)
+        {
+            return DhtResponse<NodeInfo>.Failure(closestNodeResponse.Message!);
+        }
+
+        return await FindNodeRecursivelyAsync(bicHash, new List<NodeInfo> { closestNodeResponse.Data }, new HashSet<string>(), currentNodeHash, maxDepth);
+    }
+
+    public async Task<List<NodeInfo>> GetKClosestNodesAsync(byte[] nodeHash, int k = 20)
+    {
+        var centralNodeHash = await _hashingService.ByteHash(AppConstants.GetCurrentNodeBIC(_configuration));
+        var currentNodehash = await _hashingService.ByteHash(_configuration["NodeConfig:CurrentNode"]!);
+        int targetDistance = DhtUtilities.CalculateXorDistance(nodeHash, currentNodehash.Data!);
+        var redisBucketsKey = $"dht:buckets{targetDistance}";
+        var closestNodes = await _redisDatabase.SortedSetRangeByScoreAsync(redisBucketsKey, targetDistance - k, targetDistance + k, Exclude.None, Order.Ascending, 0, k);
+        return closestNodes.Select(nodeData => MessagePackSerializer.Deserialize<NodeInfo>(nodeData!)).ToList()!;
+    }
+
+    public async Task<List<NodeInfo>> GetKClosestNodesWithAlphaAsync(byte[] nodeHash, int k = 20, int alpha = 3)
+    {
+        try
+        {
+            var allNodesResponse = await GetAllNodesAsync("dht:nodes");
+            if (allNodesResponse.Data == null || !allNodesResponse.Data.Any())
+            {
+                return new List<NodeInfo>();
+            }
+
+            // Calculate XOR distances for each node, sort, and take k * alpha closest nodes
+            var closestNodes = allNodesResponse.Data!
+                .Select(node =>
+                {
+                    var distance = DhtUtilities.CalculateXorDistance(nodeHash, node.NodeHash);
+                    return (Node: node, Distance: distance);
+                })
+                .OrderBy(pair => pair.Distance)
+                .Take(k * alpha)
+                .Select(pair => pair.Node)
+                .ToList();
+
+            // Retrieve each closest node's peer list from Redis
+            var peerListsTasks = closestNodes.Select(node =>
+            {
+                try
+                {
+                    var peersResponse = node.KnownPeers;
+                    return Task.FromResult(peersResponse ?? new List<PeerNode>());
+                }
+                catch
+                {
+                    throw;
+                }
+            });
+
+            var peerLists = await Task.WhenAll(peerListsTasks);
+
+            // Convert PeerNode to NodeInfo and flatten the lists
+            var allNodes = peerLists.SelectMany(peers => peers.Select(peer => new NodeInfo 
+                                    { 
+                                        NodeBic = peer.NodeBic,
+                                        NodeHash = peer.NodeHash,
+                                        NodeEndPoint = peer.NodeEndPoint,
+                                        NodeUri = peer.NodeUri,
+                                        LastSeen = peer.LastSeen
+                                    }))
+                                     .Concat(closestNodes) // Include the initial closest nodes as well
+                                     .DistinctBy(node => BitConverter.ToString(node.NodeHash)) // Remove duplicates by node hash
+                                     .OrderBy(node => DhtUtilities.CalculateXorDistance(nodeHash, node.NodeHash)) // Sort by XOR distance
+                                     .Take(k)
+                                     .ToList();
+
+            return allNodes;
+        }
+        catch (Exception ex)
+        {
+            throw new ApplicationException("Failed to retrieve the k closest nodes.", ex);
+        }
+    }
+
+    public async Task<DhtResponse<AccountInfo>> GetAccountNodeAsync(string key, byte[] accountHash)
+    {
+        var nodeData = await _redisDatabase.HashGetAsync(key, accountHash);
+        if (nodeData.IsNullOrEmpty)
+        {
+            return DhtResponse<AccountInfo>.Failure("Account not found.");
+        }
+
+        var node = MessagePackSerializer.Deserialize<AccountInfo>(nodeData!);
+        return DhtResponse<AccountInfo>.Success("Account retrieved successfully", node!);
+    }
+
+    public async Task<DhtResponse<List<NodeInfo>>> GetAllNodesAsync(string key)
     {
         try
         {
             List<NodeInfo> nodes = new();
-            var allNodes = await redisDatabase.HashGetAllAsync(key);
+            var allNodes = await _redisDatabase.HashGetAllAsync(key);
             foreach (var nodeEntry in allNodes)
             {
-                nodes.Add(DeserializeNodeInfo(nodeEntry.Value));
+                nodes.Add(MessagePackSerializer.Deserialize<NodeInfo>(nodeEntry.Value!)!);
             }
 
             return nodes.Any()
-                ? DHTResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodes)
-                : DHTResponse<List<NodeInfo>>.Failure("No nodes found", new List<NodeInfo>());
+                ? DhtResponse<List<NodeInfo>>.Success("Nodes retrieved successfully", nodes)
+                : DhtResponse<List<NodeInfo>>.Failure("No nodes found", new List<NodeInfo>());
         }
         catch (Exception ex)
         {
@@ -246,269 +398,220 @@ internal sealed class DHTRedisService : IDHTRedisService
         }
     }
 
-    public async Task<DHTResponse<List<NodeInfo>>> GetActiveNodesInBucketAsync(int distance)
+    public async Task<DhtResponse<List<NodeInfo>>> GetActiveNodesInBucketAsync(int distance)
     {
-        try
+        string bucketKey = $"dht:buckets:{distance}";
+        var nodesBiCs = await _redisDatabase.SortedSetRangeByScoreAsync(bucketKey, start: 0, stop: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+        var nodes = new List<NodeInfo>();
+        foreach (var nodeBic in nodesBiCs)
         {
-            string bucketKey = $"dht:buckets:{distance}";
-            var nodesBICs = await redisDatabase.SortedSetRangeByScoreAsync(bucketKey, start: 0, stop: DateTimeOffset.UtcNow.ToUnixTimeSeconds());
-            var nodes = new List<NodeInfo>();
-            foreach (var nodeBIC in nodesBICs)
+            var jsonData = await _redisDatabase.StringGetAsync(nodeBic.ToString());
+            if (!jsonData.IsNull)
             {
-                var jsonData = await redisDatabase.StringGetAsync(nodeBIC.ToString());
-                if (!jsonData.IsNull)
-                {
-                    nodes.Add(JsonConvert.DeserializeObject<NodeInfo>(jsonData!)!);
-                }
+                nodes.Add(MessagePackSerializer.Deserialize<NodeInfo>(jsonData!)!);
             }
-
-            return DHTResponse<List<NodeInfo>>.Success("Success", nodes);
         }
-        catch (Exception)
-        {
 
-            throw;
-        }
+        return DhtResponse<List<NodeInfo>>.Success("Success", nodes);
     }
 
-    public async Task<DHTResponse<long>> GetBucketCountAsync(string bucketKey, StorageType storageType)
+    public async Task<DhtResponse<long>> GetBucketCountAsync(string bucketKey) 
     {
-        try
-        {
-            if (storageType == StorageType.Redis)
-            {
-                // Retrieve the count from the counter key
-                string countKey = $"{bucketKey}:count";
-                long count = (long)await redisDatabase.StringGetAsync(countKey);
-                return DHTResponse<long>.Success("Bucket count retrieved successfully", count);
-            }
-
-            //ToDo: Get Count From InMemeory
-            return DHTResponse<long>.Success("Bucket count retrieved successfully", 0);
-        }
-        catch (RedisServerException ex) when (ex.Message.Contains("WRONGTYPE"))
-        {
-            // Handle case where key type is wrong in Redis
-            throw new InvalidOperationException("Bucket key exists with an incorrect data type.", ex);
-        }
-        catch (Exception)
-        {
-            throw;
-        }
+        // Retrieve the count from the counter key
+        string countKey = $"{bucketKey}:count";
+        long count = (long)await _redisDatabase.StringGetAsync(countKey);
+        return DhtResponse<long>.Success("Bucket count retrieved successfully", count);
     }
 
-    public async Task<DHTResponse<long>> GetBucketCountAsync(string bucketKey)
+    public async Task<DhtResponse<long>> GetBucketCountUsingLengthAsync(string bucketKey)
+    {
+        long count = await _redisDatabase.SortedSetLengthAsync(bucketKey);
+        return DhtResponse<long>.Success("Bucket count retrieved successfully", count);
+    }
+
+    public async Task<DhtResponse<long>> GetBucketLengthAsync(string bucketKey)
+    {
+        long count = await _redisDatabase.ListLengthAsync(bucketKey);
+        return DhtResponse<long>.Success("Bucket count retrieved successfully", count);
+    }
+
+    public async Task<DhtResponse<NodeInfo>> GetLeastRecentlySeenNodeAsync(string bucketKey, string nodeKey)
+    {
+        // Get the node with the smallest score (most likely the least recently seen node)
+        var leastRecentlySeenNodeHash = await GetLeastRecentlySeenNodeHash(bucketKey);
+        if (leastRecentlySeenNodeHash.Data != null && leastRecentlySeenNodeHash.Data!.Length > 0)
+        {
+            // Step 2: Use the node hash (field) to retrieve the actual NodeInfo object
+            RedisValue serializedNodeInfo = await _redisDatabase.HashGetAsync(nodeKey, leastRecentlySeenNodeHash.Data);
+            if (!serializedNodeInfo.IsNullOrEmpty)
+            {
+                var nodeInfo = MessagePackSerializer.Deserialize<NodeInfo>(serializedNodeInfo!);
+                return DhtResponse<NodeInfo>.Success("Least recently seen node retrieved", nodeInfo!);
+            }
+        }
+
+        return DhtResponse<NodeInfo>.Failure("No nodes found in the bucket.");
+    }
+
+    public async Task<DhtResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
+    {
+        await _redisDatabase.HashSetAsync(key, field, serializedValue);
+        if (expiry.HasValue && !isCentralNode)
+        {
+            await _redisDatabase.KeyExpireAsync(key, expiry);
+        }
+
+        return DhtResponse<bool>.Success("Node added/updated successfully", true);
+    }
+
+    public async Task<DhtResponse<bool>> SetNodeByteValueAsync(string key, byte[] field, byte[] serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
+    {
+        await _redisDatabase.HashSetAsync(key, field, serializedValue);
+        if (expiry.HasValue && !isCentralNode)
+        {
+            await _redisDatabase.KeyExpireAsync(key, expiry);
+        }
+
+        return DhtResponse<bool>.Success("Node added/updated successfully", true);
+    }
+
+    public async Task<DhtResponse<bool>> SetSortedNodeAsync(string bucketKey, string serializedValue, double score)
     {
         try
         {
-            // Retrieve the count from the counter key
             string countKey = $"{bucketKey}:count";
-            long count = (long)await redisDatabase.StringGetAsync(countKey);
-            return DHTResponse<long>.Success("Bucket count retrieved successfully", count);
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-    
-    public async Task<DHTResponse<long>> GetBucketLengthAsync(string bucketKey)
-    {
-        try
-        {
-            long count = await redisDatabase.ListLengthAsync(bucketKey);
-            return DHTResponse<long>.Success("Bucket count retrieved successfully", count);
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-    public async Task<DHTResponse<NodeInfo>> GetLeastRecentlySeenNodeAsync(string bucketKey, string nodeKey)
-    {
-        try
-        {
-            // Get the node with the smallest score (most likely the least recently seen node)
-            var leastRecentlySeenNodeHash = await GetLeastRecentlySeenNodeHash(bucketKey);
-            if (leastRecentlySeenNodeHash.Data != null && leastRecentlySeenNodeHash.Data!.Length > 0)
-            {
-                // Step 2: Use the node hash (field) to retrieve the actual NodeInfo object
-                RedisValue serializedNodeInfo = await redisDatabase.HashGetAsync(nodeKey, leastRecentlySeenNodeHash.Data);
-                if (!serializedNodeInfo.IsNullOrEmpty)
-                {
-                    var nodeInfo = JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!);
-                    return DHTResponse<NodeInfo>.Success("Least recently seen node retrieved", nodeInfo!);
-                }
-            }
-
-            return DHTResponse<NodeInfo>.Failure("No nodes found in the bucket.");
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-    public async Task<DHTResponse<bool>> SetNodeAsync(string key, byte[] field, string serializedValue, TimeSpan? expiry = null, bool isCentralNode = false)
-    {
-        try
-        {
-            await redisDatabase.HashSetAsync(key, field, serializedValue);
-            if (expiry.HasValue && !isCentralNode)
-            {
-                await redisDatabase.KeyExpireAsync(key, expiry);
-            }
-
-            return DHTResponse<bool>.Success("Node added/updated successfully", true);
-        }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
-
-    public async Task<DHTResponse<bool>> SetSortedNodeAsync(string bucketKey, NodeInfo value, double score)
-    {
-        try
-        {
-            var serializedValue = SerializeNodeInfo(value);
-            string countKey = $"{bucketKey}:count";
-            var added = await redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score);
+            var added = await _redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score);
 
             // Increment count in a separate key
-            await redisDatabase.StringIncrementAsync(countKey);
+            await _redisDatabase.StringIncrementAsync(countKey);
 
             return added
-                ? DHTResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", value } })
-                : DHTResponse<bool>.Success("Failed to Add Node to DHT", true, null, null);
+                ? DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", serializedValue } })
+                : DhtResponse<bool>.Success("Failed to Add Node to DHT", true);
         }
         catch (RedisServerException ex) when (ex.Message.Contains("WRONGTYPE"))
         {
             throw new InvalidOperationException("Bucket key had an incorrect data type; the key has been reset. Please retry.", ex);
         }
-        catch (Exception)
-        {
-            throw;
-        }
     }
 
-    public async Task<DHTResponse<bool>> SetSortedNodeInListAsync(string bucketKey, NodeInfo value)
+    public async Task<DhtResponse<bool>> SetSortedNodeByteValueAsync(string bucketKey, byte[] serializedValue, double score)
     {
         try
         {
-            var serializedValue = SerializeNodeInfo(value);
-            await redisDatabase.ListRightPushAsync(bucketKey, serializedValue);
+            string countKey = $"{bucketKey}:count";
+            var added = await _redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score);
 
-            return DHTResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object> { { "node", value } });
+            // Increment count in a separate key
+            await _redisDatabase.StringIncrementAsync(countKey);
+
+            return added
+                ? DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object>() { { "node", serializedValue } })
+                : DhtResponse<bool>.Success("Failed to Add Node to DHT", true);
         }
-        catch (Exception)
+        catch (RedisServerException ex) when (ex.Message.Contains("WRONGTYPE"))
         {
-            throw;
+            throw new InvalidOperationException("Bucket key had an incorrect data type; the key has been reset. Please retry.", ex);
         }
     }
 
-    public async Task<DHTResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, AccountInfo value, double score)
+    public async Task<DhtResponse<bool>> SetSortedNodeInListAsync(string bucketKey, string serializedValue)
     {
-        try
-        {
-            var serializedValue = SerializeAccountInfo(value);
-            await redisDatabase.SortedSetAddAsync(bucketKey, value.AccountHash, score);
-            await redisDatabase.HashSetAsync(accountKey, value.AccountHash, serializedValue);
-            await redisDatabase.StringSetAsync(value.AccountHash, serializedValue, TimeSpan.FromHours(24));
+        await _redisDatabase.ListRightPushAsync(bucketKey, serializedValue);
 
-            return await redisDatabase.SortedSetAddAsync(bucketKey, value.AccountHash, score)
-                ? DHTResponse<bool>.Success("Account added to DHT", true, null, new Dictionary<string, object>() { { "account", value } })
-                : DHTResponse<bool>.Success("Failed to Add Account to DHT", true, null, null);
-        }
-        catch (Exception)
+        return DhtResponse<bool>.Success("Node added to DHT", true, null, new Dictionary<string, object> { { "node", serializedValue } });
+    }
+
+    public async Task<DhtResponse<bool>> SetSortedAccountAsync(string bucketKey, string accountKey, string serializedValue, double score)
+    {
+        return await _redisDatabase.SortedSetAddAsync(bucketKey, serializedValue, score)
+            ? DhtResponse<bool>.Success("Account added to DHT", true, null, new Dictionary<string, object>() { { "account", serializedValue } })
+            : DhtResponse<bool>.Success("Failed to Add Account to DHT", true);
+    }
+
+    public async Task<DhtResponse<bool>> RemoveNodeAsync(string key, byte[] field)
+    {
+        return await _redisDatabase.HashDeleteAsync(key, field)
+            ? DhtResponse<bool>.Success("Node removed successfully", true)
+            : DhtResponse<bool>.Failure("Node not found");
+    }
+
+    public async Task<DhtResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo)
+    {
+        //var serializedHash = JsonSerializer.Serialize(nodeInfo.NodeHash);
+        var serializedHash = MessagePackSerializer.Serialize(nodeInfo.NodeHash);
+
+        var wasRemoved = await _redisDatabase.SortedSetRemoveAsync(key, serializedHash);
+        if (wasRemoved)
         {
-            throw;
+            // Optionally, remove the node from the 'nodes' hash if you have one
+            await RemoveNodeAsync("dht:nodes", nodeInfo.NodeHash);
+            return DhtResponse<bool>.Success("Node removed from DHT", true);
+        }
+        else
+        {
+            return DhtResponse<bool>.Success("Node not found in DHT", false);
         }
     }
 
-    public async Task<DHTResponse<bool>> RemoveNodeAsync(string key, byte[] field)
+    public async Task<DhtResponse<bool>> UpdateUsingTransaction(byte[] bicHash, NodeInfo nodeInfo, TimeSpan? expiry = null)
     {
-        try
+        var transaction = _redisDatabase.CreateTransaction();
+
+        // Watch the key to ensure the transaction only succeeds if the key hasn't changed
+        transaction.AddCondition(Condition.KeyExists(bicHash));
+
+
+        //var serializedNodeInfo = JsonSerializer.Serialize(nodeInfo);
+        var serializedNodeInfo = MessagePackSerializer.Serialize(nodeInfo);
+
+
+        // Queue the update operation in the transaction (update node info in the hash)
+        _ = transaction.HashSetAsync("dht:nodes", bicHash, serializedNodeInfo);
+
+        if (expiry.HasValue)
         {
-            return await redisDatabase.HashDeleteAsync(key, field)
-            ? DHTResponse<bool>.Success("Node removed successfully", true)
-            : DHTResponse<bool>.Failure("Node not found", false);
+            await _redisDatabase.KeyExpireAsync("dht:nodes", expiry);
         }
-        catch (Exception)
-        {
-            throw;
-        }
-    }
 
-    public async Task<DHTResponse<bool>> RemoveSortedSetNodeAsync(string key, NodeInfo nodeInfo)
-    {
-        try
-        {
-            var wasRemoved = await redisDatabase.SortedSetRemoveAsync(key, JsonConvert.SerializeObject(nodeInfo.NodeHash));
-            if (wasRemoved)
-            {
-                // Optionally, remove the node from the 'nodes' hash if you have one
-                await RemoveNodeAsync("dht:nodes", nodeInfo.NodeHash);
-                return DHTResponse<bool>.Success("Node removed from DHT", true);
-            }
-            else
-            {
-                return DHTResponse<bool>.Success("Node not found in DHT", false);
-            }
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
-    }
-
-    public async Task UpdateNodeTimestampAsync(string bucketKey, byte[] nodeHash)
-    {
-        double currentTimestamp = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-        await redisDatabase.SortedSetAddAsync(bucketKey, nodeHash, currentTimestamp);
-    }
-
-    public async Task<DHTResponse<bool>> UpdateUsingTransaction(byte[] bicHash, NodeInfo nodeInfo, TimeSpan? expiry = null)
-    {
-        try
-        {
-            var transaction = redisDatabase.CreateTransaction();
-
-            // Watch the key to ensure the transaction only succeeds if the key hasn't changed
-            transaction.AddCondition(Condition.KeyExists(bicHash));
-
-            // Queue the update operation in the transaction (update node info in the hash)
-            _ = transaction.HashSetAsync("dht:nodes", bicHash, SerializeNodeInfo(nodeInfo));
-
-            if (expiry.HasValue)
-            {
-                await redisDatabase.KeyExpireAsync("dht:nodes", expiry);
-            }
-
-            return await transaction.ExecuteAsync()
-                ? DHTResponse<bool>.Success("Update successful", true)
-                : DHTResponse<bool>.Failure("Update failed", false);
-
-        }
-        catch (Exception)
-        {
-
-            throw;
-        }
+        return await transaction.ExecuteAsync()
+            ? DhtResponse<bool>.Success("Update successful", true)
+            : DhtResponse<bool>.Failure("Update failed");
     }
 
     public async Task CleanUpInactiveNodesAsync(string redisNodesKey)
     {
-        var dhtNodes = await redisDatabase.HashGetAllAsync(redisNodesKey);
+        var dhtNodes = await _redisDatabase.HashGetAllAsync(redisNodesKey);
         foreach (var nodeHash in dhtNodes)
         {
-            var nodeInfoResponse = DeserializeNodeInfo(nodeHash.Value);
-            if (nodeInfoResponse != null && ShouldEvictNode(nodeInfoResponse))
+            var nodeInfoResponse = MessagePackSerializer.Deserialize<NodeInfo>(nodeHash.Value!);
+            if (ShouldEvictNode(nodeInfoResponse!))
             {
-                await RemoveSortedSetNodeAsync(redisNodesKey, nodeInfoResponse);
+                await RemoveSortedSetNodeAsync(redisNodesKey, nodeInfoResponse!);
             }
+        }
+    }
+
+    
+
+
+
+    #region Private Methods
+
+    private async Task<DhtResponse<byte[]>> GetLeastRecentlySeenNodeHash(string bucketKey)
+    {
+        try
+        {
+            var leastRecentlySeenNode = await _redisDatabase.SortedSetRangeByRankAsync(bucketKey, 0, 0);
+            if (leastRecentlySeenNode.Length > 0)
+            {
+                return DhtResponse<byte[]>.Success("Least recently seen node retrieved", leastRecentlySeenNode[0]!);
+            }
+            return DhtResponse<byte[]>.Failure("No nodes found in the bucket.");
+        }
+        catch (Exception ex)
+        {
+            throw new ApplicationException($"Error retrieving least recently seen node hash: {ex.Message}", ex);
         }
     }
 
@@ -518,77 +621,53 @@ internal sealed class DHTRedisService : IDHTRedisService
         //return DateTimeOffset.UtcNow.ToUnixTimeSeconds() - (long)nodeInfo.LastSeen > 24;
     }
 
-
-
-    #region Private Methods
-
-    private async Task<DHTResponse<byte[]>> GetLeastRecentlySeenNodeHash(string bucketKey)
+    private async Task<DhtResponse<NodeInfo>> FindNodeRecursivelyAsync(byte[] bicHash, List<NodeInfo> nodes, HashSet<string> visited, byte[] currentNodeHash, int depth)
     {
-        try
+        if (depth <= 0 || nodes.Count == 0)
         {
-            var leastRecentlySeenNode = await redisDatabase.SortedSetRangeByRankAsync(bucketKey, 0, 0);
-            if (leastRecentlySeenNode.Length > 0)
-            {
-                return DHTResponse<byte[]>.Success("Least recently seen node retrieved", leastRecentlySeenNode[0]!);
-            }
-            return DHTResponse<byte[]>.Failure("No nodes found in the bucket.", null);
+            return DhtResponse<NodeInfo>.Failure("Max depth reached or no nodes to check");
         }
-        catch (Exception ex)
+
+        foreach (var node in nodes)
         {
-            throw new ApplicationException($"Error retrieving least recently seen node hash: {ex.Message}", ex);
-        }
-    }
-
-    private async Task EvictInactiveOrLeastRecentlySeenNodeAsync(string bucketKey)
-    {
-        // Step 1: Fetch the node with the oldest timestamp (least recently seen)
-        var leastRecentlySeenNode = await redisDatabase.SortedSetRangeByRankWithScoresAsync(bucketKey, 0, 0);
-
-        if (leastRecentlySeenNode.Length > 0)
-        {
-            var nodeHash = leastRecentlySeenNode[0].Element;
-
-            // Step 2: Check node's last active timestamp
-            var nodeTimestamp = leastRecentlySeenNode[0].Score;  // Assuming score is the timestamp
-            var currentTime = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-
-            // Step 3: If node is inactive (hasn't been seen for a threshold), evict it
-            var inactiveThreshold = TimeSpan.FromHours(24).TotalSeconds;  // Define your own inactivity threshold
-            if (currentTime - nodeTimestamp >= inactiveThreshold)
+            // Check if we have already visited this node
+            if (visited.Contains(BitConverter.ToString(node.NodeHash)))
             {
-                // Node is inactive, remove it
-                await redisDatabase.SortedSetRemoveAsync(bucketKey, nodeHash);
-                await redisDatabase.HashDeleteAsync("nodes", nodeHash);
+                continue; // Skip already visited nodes to prevent loops
             }
-            else
+
+            visited.Add(BitConverter.ToString(node.NodeHash)); // Mark the node as visited
+
+            // Check if this node is the one we want
+            if (node.NodeHash.SequenceEqual(bicHash))
             {
-                // If no inactive nodes, evict the least recently seen
-                await redisDatabase.SortedSetRemoveAsync(bucketKey, nodeHash);
+                return DhtResponse<NodeInfo>.Success("Success", node);
+            }
+
+            // Query known peers if the current node is not the responsible node
+            if (node.KnownPeers != null && node.KnownPeers.Any())
+            {
+                // Convert PeerNode to NodeInfo
+                var nodeInfos = node.KnownPeers.Select(peer => new NodeInfo
+                {
+                    NodeHash = peer.NodeHash,
+                    NodeBic = peer.NodeBic,
+                    NodeEndPoint = peer.NodeEndPoint,
+                    NodeUri = peer.NodeUri,
+                    LastSeen = peer.LastSeen
+
+                }).ToList();
+
+                // Recursively search within the known peers of the current node
+                var peerNode = await FindNodeRecursivelyAsync(bicHash, nodeInfos, visited, currentNodeHash, depth - 1);
+                return peerNode;
             }
         }
+
+        return DhtResponse<NodeInfo>.Failure("Failied");
     }
 
-    private NodeInfo DeserializeNodeInfo(RedisValue serializedNodeInfo)
-    {
-        return JsonConvert.DeserializeObject<NodeInfo>(serializedNodeInfo!)!;
-    }
 
-    private AccountInfo DeserializeAccountInfo(RedisValue serializedAccountInfo)
-    {
-        return JsonConvert.DeserializeObject<AccountInfo>(serializedAccountInfo!)!;
-    }
-
-    private string SerializeNodeInfo(NodeInfo nodeInfo)
-    {
-        return JsonConvert.SerializeObject(nodeInfo);
-    }
-
-    private string SerializeAccountInfo(AccountInfo accountInfo)
-    {
-        return JsonConvert.SerializeObject(accountInfo);
-    }
-
-    
 
 
 

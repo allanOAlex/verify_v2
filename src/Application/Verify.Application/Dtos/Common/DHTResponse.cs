@@ -1,12 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
+﻿using MessagePack;
 using System.Text.Json.Serialization;
-using System.Threading.Tasks;
 
 namespace Verify.Application.Dtos.Common;
-public record DHTResponse<T>
+
+[MessagePackObject]
+public record DhtResponse<T>
 {
     public bool Successful { get; init; } = true;
     public string? Message { get; init; } = "Operation Successful";
@@ -18,7 +16,7 @@ public record DHTResponse<T>
 
 
     [JsonConstructor]
-    private DHTResponse(bool successful, string? message, T? data, Exception? exception, Dictionary<string, object>? additionalData)
+    private DhtResponse(bool successful, string? message, T? data, Exception? exception, Dictionary<string, object>? additionalData)
     {
         Successful = successful;
         Message = message;
@@ -27,14 +25,14 @@ public record DHTResponse<T>
         AdditionalData = additionalData;
     }
 
-    public static DHTResponse<T> Success(string message, T value, Exception? exception = null, Dictionary<string, object>? additionalData = null)
+    public static DhtResponse<T> Success(string message, T value, Exception? exception = null, Dictionary<string, object>? additionalData = null)
     {
-        return new DHTResponse<T>(true, message, value, null, additionalData);
+        return new DhtResponse<T>(true, message, value, null, additionalData);
     }
 
-    public static DHTResponse<T> Failure(string errorMessage, T? data = default, Exception? error = null, Dictionary<string, object>? additionalData = null)
+    public static DhtResponse<T> Failure(string errorMessage, T? data = default, Exception? error = null, Dictionary<string, object>? additionalData = null)
     {
-        return new DHTResponse<T>(false, errorMessage, data, error, additionalData);
+        return new DhtResponse<T>(false, errorMessage, data, error, additionalData);
     }
 
 }

@@ -1,14 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using MessagePack;
 
 namespace Verify.Application.Dtos.Account;
+
+[MessagePackObject]
 public record AccountRequest
 {
-    public required string SenderBIC { get; init; }
-    public required string RecipientBIC { get; init; }
+    [Key("SenderBic")]
+    public required string SenderBic { get; init; }
+
+    [Key("RecipientBic")]
+    public required string RecipientBic { get; init; }
+
+    [Key("RecipientAccountNumber")]
     public required string RecipientAccountNumber { get; init; }
+
+    [Key("CorrelationId")]
     public string? CorrelationId { get; init; }
 }
