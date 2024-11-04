@@ -54,4 +54,10 @@
     <None Remove="Utilities\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="loadtest.js">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

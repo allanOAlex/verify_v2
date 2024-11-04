@@ -22,7 +22,7 @@
     private AccountInfo? accountInfo;
     private long responseTime;
 
-    private readonly AccountRequest accountRequest1 = new()
+    private readonly AccountRequest accountRequest = new()
         {
             SenderBic = "BARCKENX",
             RecipientBic = "SCBLKENX",
@@ -46,24 +46,30 @@
         {
             var stopwatch = Stopwatch.StartNew();
 
-            // var cacheKey = CacheKeyHelper.GenerateCacheKey(accountRequest1.RecipientBic, accountRequest1.RecipientAccountNumber);
-            // accountInfo = await CacheService.GetAsync<AccountInfo>(cacheKey);
             if (accountInfo == null)
             {
-                var apiEndPoint = Configuration["AppSettings:EndPoints:DHT:FetchAccountInfo"];
-                if (string.IsNullOrEmpty(apiEndPoint))
+                var cacheKey = CacheKeyHelper.GenerateCacheKey(accountRequest.RecipientBic, accountRequest.RecipientAccountNumber);
+                var cachedAccountInfo = await CacheService.GetAsync<AccountInfo>(cacheKey);
+                if (cachedAccountInfo != null)
                 {
-                    throw new InvalidOperationException("API endpoint is not configured.");
+                    accountInfo = cachedAccountInfo;
                 }
+                else
+                {
+                    var apiEndPoint = Configuration["AppSettings:EndPoints:DHT:FetchAccountInfo"];
+                    if (string.IsNullOrEmpty(apiEndPoint))
+                    {
+                        throw new InvalidOperationException("API endpoint is not configured.");
+                    }
 
-                accountInfo = await ApiClient.FetchAccountData(accountRequest1, apiEndPoint);
-                //await CacheService.SetAsync(cacheKey, accountInfo, TimeSpan.FromHours(12), TimeSpan.FromMinutes(30));
+                    accountInfo = await ApiClient.FetchAccountData(accountRequest, apiEndPoint);
+                    await CacheService.SetAsync(cacheKey, accountInfo, TimeSpan.FromHours(12), TimeSpan.FromMinutes(30));
+                }
             }
 
             stopwatch.Stop();
             responseTime = stopwatch.ElapsedMilliseconds;
 
-            // Trigger UI update
             StateHasChanged();
         }
         catch (Exception)
