@@ -9,8 +9,11 @@
 
   <ItemGroup>
     <Compile Remove="Abstractions\Ihandlers\**" />
+    <Compile Remove="Protos\**" />
     <EmbeddedResource Remove="Abstractions\Ihandlers\**" />
+    <EmbeddedResource Remove="Protos\**" />
     <None Remove="Abstractions\Ihandlers\**" />
+    <None Remove="Protos\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,10 +30,6 @@
   <ItemGroup>
     <ProjectReference Include="..\..\Domain\Verify.Domain\Verify.Domain.csproj" />
     <ProjectReference Include="..\..\Shared\Verify.Shared\Verify.Shared.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Protos\" />
   </ItemGroup>
 
 </Project>
