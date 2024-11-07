@@ -3,6 +3,8 @@
 using Verify.Domain.Entities;
 
 namespace Verify.Persistence.DataContext;
+
+
 public class DbContext : Microsoft.EntityFrameworkCore.DbContext
 {
     public DbContext(DbContextOptions<DbContext> options) : base(options)

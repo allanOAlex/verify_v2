@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Verify.Application.Dtos.Bank;
 
-[MessagePackObject]
+[MessagePackObject(keyAsPropertyName:true)]
 public record PeerNode
 {
     public required string NodeBic { get; init; }

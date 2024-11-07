@@ -25,9 +25,9 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.BankTwo.Api", "src\Web\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.Client.Console", "src\Web\Web.Client.Console\Web.Client.Console.csproj", "{A68B59E9-333B-4765-B133-9EAF028A57A2}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Verify.gRPC", "src\gRPC\Verify.gRPC\Verify.gRPC.csproj", "{9EE4F162-5CE2-4D02-B85A-74DC0EFC2AC8}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Verify.gRPC", "src\gRPC\Verify.gRPC\Verify.gRPC.csproj", "{9EE4F162-5CE2-4D02-B85A-74DC0EFC2AC8}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Web.Client.Blazor", "src\Web\Web.Client.Blazor\Web.Client.Blazor.csproj", "{976DCA84-91D6-48CC-8056-CD2B47B2438F}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Web.Client.Blazor", "src\Web\Web.Client.Blazor\Web.Client.Blazor.csproj", "{976DCA84-91D6-48CC-8056-CD2B47B2438F}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
